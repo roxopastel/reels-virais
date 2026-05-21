@@ -10,7 +10,7 @@ export const revalidate = 0;
 const ALLOWED_EXTS = new Set([".mp3", ".wav", ".ogg", ".m4a", ".aac", ".webm"]);
 
 export async function GET() {
-  const dir = path.join(process.cwd(), "public", "audio");
+  const dir = path.join("public", "audio");
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = entries

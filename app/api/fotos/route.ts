@@ -8,7 +8,7 @@ export const revalidate = 0;
 const ALLOWED_EXTS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
 export async function GET() {
-  const dir = path.join(process.cwd(), "public", "fotos");
+  const dir = path.join("public", "fotos");
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const files = entries

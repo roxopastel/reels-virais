@@ -233,7 +233,7 @@ function publicFotosFileFromUrl(
   if (!mimeType) return null;
 
   return {
-    path: path.join(process.cwd(), "public", "fotos", file),
+    path: path.join("public", "fotos", file),
     mimeType,
   };
 }
@@ -422,7 +422,7 @@ async function withRandomPhotos(
 }
 
 async function listPhotoFiles(): Promise<string[]> {
-  const dir = path.join(process.cwd(), "public", "fotos");
+  const dir = path.join("public", "fotos");
   const allowed = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
