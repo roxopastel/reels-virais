@@ -440,9 +440,9 @@ function ConversationPhotoModal({
   const isMusicPlaying = !!musicUrl && playingMusicUrl === musicUrl;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#111113] p-5 shadow-2xl shadow-black/50">
-        <div className="mb-4 flex items-start justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111113] shadow-2xl shadow-black/50">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 p-4 pb-3 sm:p-5 sm:pb-4">
           <div>
             <h2 className="text-lg font-semibold text-white">
               Fotos da conversa
@@ -461,65 +461,67 @@ function ConversationPhotoModal({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PhotoPreviewCard
-            title="Foto de perfil"
-            imageUrl={avatarUrl ?? ""}
-            imageClassName="h-28 w-28 rounded-full"
-            disabled={generating || !canRandomize}
-            onRandomize={onRandomizeAvatar}
-          />
-          <PhotoPreviewCard
-            title="Story respondido"
-            imageUrl={storyUrl}
-            imageClassName="h-40 w-24 rounded-xl"
-            disabled={generating || !canRandomize}
-            onRandomize={onRandomizeStory}
-          />
-        </div>
-
-        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-white">Música</p>
-              <p className="mt-0.5 max-w-[260px] truncate text-xs text-ig-muted">
-                {musicFile && musicFile !== "none" ? musicFile : "Nenhuma música"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!musicUrl) return;
-                  toggleModalPreviewAudio(musicUrl, setPlayingMusicUrl);
-                }}
-                disabled={generating || !musicUrl}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-ig-muted transition hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                title={isMusicPlaying ? "Pausar música" : "Ouvir música"}
-              >
-                {isMusicPlaying ? (
-                  <Pause className="h-4 w-4" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={onRandomizeMusic}
-                disabled={generating || !canRandomizeMusic}
-                className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Trocar
-              </button>
-            </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-5 sm:py-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <PhotoPreviewCard
+              title="Foto de perfil"
+              imageUrl={avatarUrl ?? ""}
+              imageClassName="h-24 w-24 rounded-full sm:h-28 sm:w-28"
+              disabled={generating || !canRandomize}
+              onRandomize={onRandomizeAvatar}
+            />
+            <PhotoPreviewCard
+              title="Story respondido"
+              imageUrl={storyUrl}
+              imageClassName="h-32 w-20 rounded-xl sm:h-40 sm:w-24"
+              disabled={generating || !canRandomize}
+              onRandomize={onRandomizeStory}
+            />
           </div>
-          <p className="text-[11px] leading-relaxed text-ig-muted">
-            A música só altera o vídeo final. Ela não é enviada para o Gemini.
-          </p>
+
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">Música</p>
+                <p className="mt-0.5 max-w-[220px] truncate text-xs text-ig-muted sm:max-w-[260px]">
+                  {musicFile && musicFile !== "none" ? musicFile : "Nenhuma música"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!musicUrl) return;
+                    toggleModalPreviewAudio(musicUrl, setPlayingMusicUrl);
+                  }}
+                  disabled={generating || !musicUrl}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-ig-muted transition hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  title={isMusicPlaying ? "Pausar música" : "Ouvir música"}
+                >
+                  {isMusicPlaying ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onRandomizeMusic}
+                  disabled={generating || !canRandomizeMusic}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-medium text-white transition hover:border-white/25 hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Trocar
+                </button>
+              </div>
+            </div>
+            <p className="text-[11px] leading-relaxed text-ig-muted">
+              A música só altera o vídeo final. Ela não é enviada para o Gemini.
+            </p>
+          </div>
         </div>
 
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-white/10 p-4 pt-3 sm:flex-row sm:justify-end sm:p-5 sm:pt-4">
           <button
             type="button"
             onClick={onClose}
@@ -600,7 +602,7 @@ function PhotoPreviewCard({
           Trocar
         </button>
       </div>
-      <div className="flex h-44 items-center justify-center rounded-lg bg-black/20">
+      <div className="flex h-36 items-center justify-center rounded-lg bg-black/20 sm:h-44">
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
