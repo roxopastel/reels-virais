@@ -606,8 +606,13 @@ function PhotoPreviewCard({
         {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={imageUrl}
+            src={photoPreviewUrl(imageUrl)}
             alt={title}
+            loading="lazy"
+            decoding="async"
+            onError={(e) => {
+              e.currentTarget.src = imageUrl;
+            }}
             className={`${imageClassName} object-cover`}
           />
         ) : (
@@ -778,8 +783,19 @@ function photoUrl(file: string): string {
 function fileNameFromPhotoUrl(value: string | null | undefined): string | undefined {
   if (!value?.startsWith("/fotos/")) return undefined;
   try {
-    return decodeURIComponent(value.slice("/fotos/".length));
+    const file = decodeURIComponent(value.slice("/fotos/".length));
+    if (file.includes("/") || file.includes("\\") || file.includes("..")) {
+      return undefined;
+    }
+    return file;
   } catch {
     return undefined;
   }
+}
+
+function photoPreviewUrl(value: string | null | undefined): string {
+  const file = fileNameFromPhotoUrl(value);
+  if (!file) return value ?? "";
+  const base = file.replace(/\.[^.]+$/, "");
+  return `/fotos/thumbs/${encodeURIComponent(base)}.webp`;
 }

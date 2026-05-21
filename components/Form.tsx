@@ -161,8 +161,13 @@ export function Form({ config, onChange, disabled }: FormProps) {
                 {config.avatarDataUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={config.avatarDataUrl}
+                    src={photoPreviewUrl(config.avatarDataUrl)}
                     alt="avatar"
+                    loading="lazy"
+                    decoding="async"
+                    onError={(e) => {
+                      e.currentTarget.src = config.avatarDataUrl ?? "";
+                    }}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -1034,8 +1039,13 @@ function StoryReplyCard({
         {storyReply?.imageDataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={storyReply.imageDataUrl}
+            src={photoPreviewUrl(storyReply.imageDataUrl)}
             alt="story"
+            loading="lazy"
+            decoding="async"
+            onError={(e) => {
+              e.currentTarget.src = storyReply.imageDataUrl;
+            }}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -1338,10 +1348,21 @@ function usePhotoFiles(): { files: string[]; reload: () => void } {
 function photoFileName(value: string | null | undefined): string | undefined {
   if (!value?.startsWith("/fotos/")) return undefined;
   try {
-    return decodeURIComponent(value.slice("/fotos/".length));
+    const file = decodeURIComponent(value.slice("/fotos/".length));
+    if (file.includes("/") || file.includes("\\") || file.includes("..")) {
+      return undefined;
+    }
+    return file;
   } catch {
     return undefined;
   }
+}
+
+function photoPreviewUrl(value: string | null | undefined): string {
+  const file = photoFileName(value);
+  if (!file) return value ?? "";
+  const base = file.replace(/\.[^.]+$/, "");
+  return `/fotos/thumbs/${encodeURIComponent(base)}.webp`;
 }
 
 /** Fetches the list of audio files available in /public/audio/. */
