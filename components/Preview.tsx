@@ -429,8 +429,12 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     ref,
     () => ({
       record: async () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return null;
+        const previewCanvas = canvasRef.current;
+        if (!previewCanvas) return null;
+        const useMobileRecording = isLikelyMobileDevice();
+        const canvas = useMobileRecording
+          ? createRecordingCanvas(720)
+          : previewCanvas;
         const ctx = canvas.getContext("2d");
         if (!ctx) return null;
 
@@ -495,7 +499,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
               snapshotCanvas: snapshotCanvasRef.current,
             },
             audioTrack,
-            fps: isLikelyMobileDevice() ? 24 : 30,
+            fps: useMobileRecording ? 24 : 30,
             onRecordingStart: () => {
               if (audio && (sfxEvents.length > 0 || musicEvents.length > 0)) {
                 audio.scheduleEvents([...musicEvents, ...sfxEvents], audio.now(), {
@@ -542,7 +546,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
 });
 
 function memeRenderUrl(file: string): string {
-  return `/memes/optimized/${encodeURIComponent(file)}`;
+  const folder = isLikelyMobileDevice() ? "mobile" : "optimized";
+  return `/memes/${folder}/${encodeURIComponent(file)}`;
 }
 
 function isLikelyMobileDevice(): boolean {
@@ -551,4 +556,11 @@ function isLikelyMobileDevice(): boolean {
     window.matchMedia("(max-width: 768px)").matches ||
     window.matchMedia("(pointer: coarse)").matches
   );
+}
+
+function createRecordingCanvas(targetWidth: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = Math.round((targetWidth * CANVAS_H) / CANVAS_W);
+  return canvas;
 }

@@ -74,6 +74,8 @@ export function getRecorderMimeType(): string {
 export async function recordConversation(opts: RecordOptions): Promise<Blob> {
   const { canvas, ctx, drawCtx, onProgress } = opts;
   const fps = opts.fps ?? 30;
+  const scaleX = canvas.width / CANVAS_W;
+  const scaleY = canvas.height / CANVAS_H;
 
   if (typeof MediaRecorder === "undefined") {
     throw new Error("MediaRecorder não é suportado neste navegador.");
@@ -92,7 +94,7 @@ export async function recordConversation(opts: RecordOptions): Promise<Blob> {
     }
   }
   const mimeType = pickMimeType(!!opts.audioTrack);
-  const videoBitsPerSecond = Math.round(CANVAS_W * CANVAS_H * 4);
+  const videoBitsPerSecond = Math.round(canvas.width * canvas.height * 4);
   const recorder = new MediaRecorder(stream, {
     mimeType,
     videoBitsPerSecond,
@@ -110,7 +112,7 @@ export async function recordConversation(opts: RecordOptions): Promise<Blob> {
 
   // Draw initial frame BEFORE starting the recorder so the very first
   // captured frame is correct and not blank.
-  drawFrame(ctx, 0, drawCtx);
+  drawScaledFrame(ctx, 0, drawCtx, scaleX, scaleY);
 
   return new Promise<Blob>((resolve, reject) => {
     recorder.onerror = (e) => reject(e);
@@ -123,7 +125,7 @@ export async function recordConversation(opts: RecordOptions): Promise<Blob> {
     const loop = () => {
       const elapsed = performance.now() - startWallClock;
       const t = Math.min(elapsed, total);
-      drawFrame(ctx, t, drawCtx);
+      drawScaledFrame(ctx, t, drawCtx, scaleX, scaleY);
       if (onProgress) onProgress(Math.min(t / total, 1));
       if (elapsed >= total) {
         // give recorder a beat to flush the last frame
@@ -142,6 +144,17 @@ export async function recordConversation(opts: RecordOptions): Promise<Blob> {
       rafId = requestAnimationFrame(loop);
     });
   });
+}
+
+function drawScaledFrame(
+  ctx: CanvasRenderingContext2D,
+  timeMs: number,
+  drawCtx: DrawContext,
+  scaleX: number,
+  scaleY: number
+) {
+  ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+  drawFrame(ctx, timeMs, drawCtx);
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
