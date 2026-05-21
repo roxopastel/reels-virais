@@ -34,28 +34,78 @@ interface PreviewProps {
 }
 
 function loadVideo(src: string): Promise<HTMLVideoElement> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const video = document.createElement("video");
+    let objectUrl: string | null = null;
     video.muted = true;
     video.playsInline = true;
     video.preload = "auto";
     video.loop = false;
-    video.src = src;
+
     const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      video.removeEventListener("loadedmetadata", onMetadata);
       video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("canplay", onReady);
+      video.removeEventListener("seeked", onReady);
       video.removeEventListener("error", onError);
     };
     const onReady = () => {
       cleanup();
       resolve(video);
     };
+    const onMetadata = () => {
+      if (video.readyState >= 2) {
+        onReady();
+        return;
+      }
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        try {
+          video.currentTime = Math.min(0.05, video.duration / 2);
+        } catch {
+          /* Some mobile browsers only allow seeking after more data arrives. */
+        }
+      }
+    };
     const onError = () => {
       cleanup();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       reject(new Error(`Failed to load video: ${src}`));
     };
+    const timeoutId = window.setTimeout(() => {
+      if (video.readyState > 0) {
+        onReady();
+        return;
+      }
+      onError();
+    }, 12000);
+
+    video.addEventListener("loadedmetadata", onMetadata, { once: true });
     video.addEventListener("loadeddata", onReady, { once: true });
+    video.addEventListener("canplay", onReady, { once: true });
+    video.addEventListener("seeked", onReady, { once: true });
     video.addEventListener("error", onError, { once: true });
-    video.load();
+
+    try {
+      const response = await fetch(src, { cache: "force-cache" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      objectUrl = URL.createObjectURL(await response.blob());
+      video.dataset.objectUrl = objectUrl;
+      video.src = objectUrl;
+      video.load();
+      void video
+        .play()
+        .then(() => {
+          video.pause();
+          if (video.readyState >= 2) onReady();
+        })
+        .catch(() => {
+          /* Muted autoplay is best-effort; load events still handle readiness. */
+        });
+    } catch {
+      cleanup();
+      reject(new Error(`Failed to load video: ${src}`));
+    }
   });
 }
 
@@ -300,6 +350,9 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     for (const [file, video] of Array.from(map.entries())) {
       if (wanted.has(file)) continue;
       video.pause();
+      if (video.dataset.objectUrl) {
+        URL.revokeObjectURL(video.dataset.objectUrl);
+      }
       map.delete(file);
     }
 

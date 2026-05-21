@@ -1,0 +1,19 @@
+[[headers]]
+  for = "/fotos/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/memes/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/audio/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/musics/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
