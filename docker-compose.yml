@@ -1,0 +1,15 @@
+services:
+  direct-viral:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: direct-viral
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports:
+      - "127.0.0.1:3000:3000"
