@@ -1092,13 +1092,7 @@ function MemeInfoChip({ file }: { file: string | null }) {
     <span className="inline-flex min-w-[170px] items-center gap-2 rounded-lg border border-purple-300/15 bg-purple-300/10 p-1.5 pr-2 text-[11px] font-medium text-purple-100">
       <span className="relative h-24 w-16 overflow-hidden rounded-lg bg-black/30">
         {file ? (
-          <video
-            src={memeUrl(file)}
-            muted
-            playsInline
-            preload="metadata"
-            className="h-full w-full object-cover"
-          />
+          <MemeThumbnail file={file} className="h-full w-full" iconSize="sm" />
         ) : (
           <span className="flex h-full w-full items-center justify-center">
             <Play className="h-3 w-3" />
@@ -1107,6 +1101,74 @@ function MemeInfoChip({ file }: { file: string | null }) {
       </span>
       Possui meme
     </span>
+  );
+}
+
+function MemeThumbnail({
+  file,
+  className,
+  iconSize = "md",
+}: {
+  file: string;
+  className?: string;
+  iconSize?: "sm" | "md";
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setReady(false);
+    video.load();
+  }, [file]);
+
+  const revealFrame = (video: HTMLVideoElement) => {
+    if (video.duration > 0 && video.readyState < 2) {
+      try {
+        video.currentTime = Math.min(0.1, video.duration / 2);
+      } catch {
+        /* Mobile browsers can reject early seeks until more metadata arrives. */
+      }
+    }
+    void video
+      .play()
+      .then(() => {
+        video.pause();
+        setReady(true);
+      })
+      .catch(() => {
+        setReady(video.readyState > 0);
+      });
+  };
+
+  return (
+    <>
+      <video
+        ref={videoRef}
+        src={memeUrl(file)}
+        muted
+        playsInline
+        preload="auto"
+        onLoadedMetadata={(e) => revealFrame(e.currentTarget)}
+        onLoadedData={(e) => {
+          e.currentTarget.pause();
+          setReady(true);
+        }}
+        onCanPlay={(e) => {
+          e.currentTarget.pause();
+          setReady(true);
+        }}
+        className={`${className ?? ""} object-cover ${
+          ready ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+          <Play className={iconSize === "sm" ? "h-3 w-3" : "h-4 w-4"} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1579,19 +1641,7 @@ function MemeAfterPanel({
               title={file}
             >
               <div className="relative aspect-video bg-black">
-                <video
-                  src={memeUrl(file)}
-                  muted
-                  preload="metadata"
-                  playsInline
-                  onLoadedMetadata={(e) => {
-                    const video = e.currentTarget;
-                    if (video.duration > 0) {
-                      video.currentTime = Math.min(0.1, video.duration / 2);
-                    }
-                  }}
-                  className="h-full w-full object-cover"
-                />
+                <MemeThumbnail file={file} className="h-full w-full" />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/10">
                   <Play className="h-4 w-4 text-white drop-shadow" />
                 </div>
@@ -1707,19 +1757,7 @@ function MemeOverlayPanel({
               title={file}
             >
               <div className="relative aspect-video bg-black">
-                <video
-                  src={memeUrl(file)}
-                  muted
-                  preload="metadata"
-                  playsInline
-                  onLoadedMetadata={(e) => {
-                    const video = e.currentTarget;
-                    if (video.duration > 0) {
-                      video.currentTime = Math.min(0.1, video.duration / 2);
-                    }
-                  }}
-                  className="h-full w-full object-cover"
-                />
+                <MemeThumbnail file={file} className="h-full w-full" />
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/10">
                   <Play className="h-4 w-4 text-white drop-shadow" />
                 </div>
