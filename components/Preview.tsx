@@ -330,7 +330,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         for (const file of files) {
           wanted.add(file);
           const cached = map.get(file);
-          const src = `/memes/${encodeURIComponent(file)}`;
+          const src = memeRenderUrl(file);
           if (cached && cached.dataset.src === src) continue;
           tasks.push(
             loadVideo(src)
@@ -495,6 +495,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
               snapshotCanvas: snapshotCanvasRef.current,
             },
             audioTrack,
+            fps: isLikelyMobileDevice() ? 24 : 30,
             onRecordingStart: () => {
               if (audio && (sfxEvents.length > 0 || musicEvents.length > 0)) {
                 audio.scheduleEvents([...musicEvents, ...sfxEvents], audio.now(), {
@@ -539,3 +540,15 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     </div>
   );
 });
+
+function memeRenderUrl(file: string): string {
+  return `/memes/optimized/${encodeURIComponent(file)}`;
+}
+
+function isLikelyMobileDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(max-width: 768px)").matches ||
+    window.matchMedia("(pointer: coarse)").matches
+  );
+}

@@ -1156,7 +1156,7 @@ function MemeThumbnail({
     <>
       <video
         ref={videoRef}
-        src={memeUrl(file)}
+        src={memePreviewUrl(file)}
         muted
         playsInline
         preload="auto"
@@ -1590,8 +1590,8 @@ function useMemeFiles(): { files: string[]; reload: () => void } {
   return { files, reload: () => setReloadKey((k) => k + 1) };
 }
 
-function memeUrl(file: string): string {
-  return `/memes/${encodeURIComponent(file)}`;
+function memePreviewUrl(file: string): string {
+  return `/memes/optimized/${encodeURIComponent(file)}`;
 }
 
 function MemeAfterPanel({
