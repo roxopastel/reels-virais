@@ -447,7 +447,7 @@ export function buildSchedule(
         postMessageVisualEndMs,
         memeOverlayEndMs ?? 0
       );
-      memeStartMs = memeAnchorMs + MEME_AFTER_DELAY_MS;
+      memeStartMs = memeAnchorMs + (m.memeAfter.delayMs ?? MEME_AFTER_DELAY_MS);
       memeEndMs = memeStartMs + getMemeDurationMs(m.memeAfter.file, options);
       t = Math.max(t, memeEndMs);
     } else if (zoomBlockEndMs !== null || memeOverlayEndMs !== undefined) {

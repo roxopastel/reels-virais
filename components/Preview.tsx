@@ -7,9 +7,20 @@ import {
   useRef,
   useState,
 } from "react";
-import { drawFrame, CANVAS_W, CANVAS_H, loadImage } from "@/lib/renderer";
+import {
+  drawFrame,
+  CANVAS_W,
+  CANVAS_H,
+  loadImage,
+  type DrawContext,
+} from "@/lib/renderer";
 import { buildTimings, totalDuration } from "@/lib/animation";
-import { recordConversation } from "@/lib/recorder";
+import {
+  getRecordingDimensions,
+  recordConversationAll,
+  type OutputAspect,
+  type OutputPreset,
+} from "@/lib/recorder";
 import {
   AudioEngine,
   buildBackgroundMusicEvents,
@@ -24,7 +35,9 @@ export interface RecordResult {
 }
 
 export interface PreviewHandle {
-  record: () => Promise<RecordResult | null>;
+  record: (
+    options?: { outputAspect?: OutputAspect; outputPreset?: OutputPreset }
+  ) => Promise<RecordResult | null>;
 }
 
 interface PreviewProps {
@@ -131,6 +144,31 @@ function setMemeVideosMuted(
   }
 }
 
+function resetMemeVideos(videos: Map<string, HTMLVideoElement>) {
+  for (const video of videos.values()) {
+    video.dataset.memeVisible = "false";
+    video.dataset.memeActiveKey = "";
+    video.pause();
+    if (video.readyState > 0) {
+      try {
+        video.currentTime = 0;
+      } catch {
+        /* ignore unsupported seek states */
+      }
+    }
+  }
+}
+
+async function loadImageOrNull(src: string): Promise<HTMLImageElement | null> {
+  try {
+    const img = await loadImage(src);
+    img.dataset.src = src;
+    return img;
+  } catch {
+    return null;
+  }
+}
+
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   { config, onRecordingChange, onProgressChange },
   ref
@@ -179,6 +217,142 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   }, [config]);
 
   const [isReady, setIsReady] = useState(false);
+
+  const ensureCurrentAssets = async (cfg: ConversationConfig) => {
+    const iconTasks = [
+      !headerIconsRef.current &&
+        loadImageOrNull("/icons-superior-direito-ligar.jpeg").then((img) => {
+          if (img) headerIconsRef.current = img;
+        }),
+      !inputIconsRef.current &&
+        loadImageOrNull("/Icons-direita-teclado.jpeg").then((img) => {
+          if (img) inputIconsRef.current = img;
+        }),
+      !cameraIconRef.current &&
+        loadImageOrNull("/icone_camera_transparente.png").then((img) => {
+          if (img) cameraIconRef.current = img;
+        }),
+      !searchIconRef.current &&
+        loadImageOrNull("/icon_lupa_fundo_transparente.png").then((img) => {
+          if (img) searchIconRef.current = img;
+        }),
+      !sendIconRef.current &&
+        loadImageOrNull("/icon_send_transparente_real.png").then((img) => {
+          if (img) sendIconRef.current = img;
+        }),
+      !keyboardImageRef.current &&
+        loadImageOrNull("/teclado.png").then((img) => {
+          if (img) keyboardImageRef.current = img;
+        }),
+      !wifiImageRef.current &&
+        loadImageOrNull("/wifi.jpeg").then((img) => {
+          if (img) wifiImageRef.current = img;
+        }),
+      !ctaGoogleImageRef.current &&
+        loadImageOrNull("/google.jpeg").then((img) => {
+          if (img) ctaGoogleImageRef.current = img;
+        }),
+      !ctaBuscaImageRef.current &&
+        loadImageOrNull("/busca.jpeg").then((img) => {
+          if (img) ctaBuscaImageRef.current = img;
+        }),
+      !ctaAreaLogadaImageRef.current &&
+        loadImageOrNull("/area-logada.jpeg").then((img) => {
+          if (img) ctaAreaLogadaImageRef.current = img;
+        }),
+      !ctaFotoEnviadaImageRef.current &&
+        loadImageOrNull("/foto-enviada.jpeg").then((img) => {
+          if (img) ctaFotoEnviadaImageRef.current = img;
+        }),
+    ].filter((task): task is Promise<void> => !!task);
+
+    const avatarTask = cfg.avatarDataUrl
+      ? (avatarImageRef.current?.dataset.src ?? avatarImageRef.current?.src) ===
+        cfg.avatarDataUrl
+        ? Promise.resolve()
+        : loadImageOrNull(cfg.avatarDataUrl).then((img) => {
+            avatarImageRef.current = img;
+            if (img) img.dataset.src = cfg.avatarDataUrl!;
+          })
+      : Promise.resolve().then(() => {
+          avatarImageRef.current = null;
+        });
+
+    const storyMap = storyImagesRef.current;
+    const wantedStoryIds = new Set<string>();
+    const storyTasks = cfg.messages.map(async (message) => {
+      const src = message.storyReply?.imageDataUrl;
+      if (!src) return;
+      wantedStoryIds.add(message.id);
+      const cached = storyMap.get(message.id);
+      if (cached && (cached.dataset.src ?? cached.src) === src) return;
+      const img = await loadImageOrNull(src);
+      if (!img) return;
+      img.dataset.src = src;
+      storyMap.set(message.id, img);
+    });
+
+    const memeMap = memeVideosRef.current;
+    const wantedMemeFiles = new Set<string>();
+    const memeTasks: Promise<void>[] = [];
+    if (cfg.editedMode) {
+      for (const message of cfg.messages) {
+        const files = [message.memeAfter?.file, message.memeOverlay?.file].filter(
+          (file): file is string => !!file
+        );
+        for (const file of files) {
+          wantedMemeFiles.add(file);
+          const cached = memeMap.get(file);
+          if (cached && cached.dataset.memeFile === file) continue;
+          memeTasks.push(
+            loadMemeVideo(file)
+              .then((video) => {
+                video.dataset.memeFile = file;
+                memeMap.set(file, video);
+              })
+              .catch(() => undefined)
+          );
+        }
+      }
+    }
+
+    await Promise.all([...iconTasks, avatarTask, ...storyTasks, ...memeTasks]);
+
+    for (const id of Array.from(storyMap.keys())) {
+      if (!wantedStoryIds.has(id)) storyMap.delete(id);
+    }
+    for (const [file, video] of Array.from(memeMap.entries())) {
+      if (wantedMemeFiles.has(file)) continue;
+      video.pause();
+      if (video.dataset.objectUrl) URL.revokeObjectURL(video.dataset.objectUrl);
+      memeMap.delete(file);
+    }
+  };
+
+  const currentDrawContext = (
+    cfg: ConversationConfig,
+    timings: ReturnType<typeof buildTimings>
+  ): DrawContext => ({
+    config: cfg,
+    timings,
+    avatarImage: avatarImageRef.current,
+    headerIconsImage: headerIconsRef.current,
+    inputIconsImage: inputIconsRef.current,
+    cameraIconImage: cameraIconRef.current,
+    searchIconImage: searchIconRef.current,
+    sendIconImage: sendIconRef.current,
+    keyboardImage: keyboardImageRef.current,
+    wifiImage: wifiImageRef.current,
+    ctaImages: {
+      google: ctaGoogleImageRef.current,
+      busca: ctaBuscaImageRef.current,
+      areaLogada: ctaAreaLogadaImageRef.current,
+      fotoEnviada: ctaFotoEnviadaImageRef.current,
+    },
+    storyImages: storyImagesRef.current,
+    memeVideos: memeVideosRef.current,
+    snapshotCanvas: snapshotCanvasRef.current,
+  });
 
   // Preload the static icon images served from /public.
   useEffect(() => {
@@ -331,12 +505,13 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
           wanted.add(file);
           const cached = map.get(file);
           const src = memeRenderUrl(file);
-          if (cached && cached.dataset.src === src) continue;
+          if (cached && cached.dataset.memeFile === file) continue;
           tasks.push(
-            loadVideo(src)
+            loadMemeVideo(file)
               .then((video) => {
                 if (cancelled) return;
-                video.dataset.src = src;
+                video.dataset.src = video.dataset.src || src;
+                video.dataset.memeFile = file;
                 map.set(file, video);
               })
               .catch(() => {
@@ -394,27 +569,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
 
       const elapsed = (performance.now() - startTimeRef.current) % cycleLength;
       const t = Math.min(elapsed, total);
-      const frameCtx = {
-        config: cfg,
-        timings,
-        avatarImage: avatarImageRef.current,
-        headerIconsImage: headerIconsRef.current,
-        inputIconsImage: inputIconsRef.current,
-        cameraIconImage: cameraIconRef.current,
-        searchIconImage: searchIconRef.current,
-        sendIconImage: sendIconRef.current,
-        keyboardImage: keyboardImageRef.current,
-        wifiImage: wifiImageRef.current,
-        ctaImages: {
-          google: ctaGoogleImageRef.current,
-          busca: ctaBuscaImageRef.current,
-          areaLogada: ctaAreaLogadaImageRef.current,
-          fotoEnviada: ctaFotoEnviadaImageRef.current,
-        },
-        storyImages: storyImagesRef.current,
-        memeVideos: memeVideosRef.current,
-        snapshotCanvas: snapshotCanvasRef.current,
-      };
+      const frameCtx = currentDrawContext(cfg, timings);
       drawFrame(ctx, t, frameCtx);
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -428,25 +583,29 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   useImperativeHandle(
     ref,
     () => ({
-      record: async () => {
+      record: async (options) => {
         const previewCanvas = canvasRef.current;
         if (!previewCanvas) return null;
         const useMobileRecording = isLikelyMobileDevice();
-        const canvas = useMobileRecording
-          ? createRecordingCanvas(720)
-          : previewCanvas;
+        const outputAspect = options?.outputAspect ?? "9:16";
+        const outputPreset = options?.outputPreset ?? "source";
+        const canvas = createRecordingCanvas(outputAspect, outputPreset);
         const ctx = canvas.getContext("2d");
         if (!ctx) return null;
+        const previewCtx = previewCanvas.getContext("2d");
+        if (!previewCtx) return null;
 
-        recordingRef.current = true;
-        onRecordingChange?.(true);
         onProgressChange?.(0);
+        recordingRef.current = true;
         try {
           const cfg = configRef.current;
+          await ensureCurrentAssets(cfg);
+          onRecordingChange?.(true);
           const timings = buildTimings(
             cfg,
             memeDurationOptions(memeVideosRef.current)
           );
+          const drawCtx = currentDrawContext(cfg, timings);
 
           // ---- Audio (edited mode only) ----
           let audioTrack: MediaStreamTrack | null = null;
@@ -460,6 +619,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             // so the AudioContext is allowed to start producing sound.
             await audio.ensureReady();
             audio.cancelAll();
+            resetMemeVideos(memeVideosRef.current);
             if (cfg.editedMode) {
               audio.connectMediaElements(
                 Array.from(memeVideosRef.current.values()),
@@ -474,32 +634,17 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             await audio.preloadUrls(uniqueUrls([...sfxEvents, ...musicEvents]));
           }
 
-          const blob = await recordConversation({
+          const recorded = await recordConversationAll({
             canvas,
             ctx,
-            drawCtx: {
-              config: cfg,
-              timings,
-              avatarImage: avatarImageRef.current,
-              headerIconsImage: headerIconsRef.current,
-              inputIconsImage: inputIconsRef.current,
-              cameraIconImage: cameraIconRef.current,
-              searchIconImage: searchIconRef.current,
-              sendIconImage: sendIconRef.current,
-              keyboardImage: keyboardImageRef.current,
-              wifiImage: wifiImageRef.current,
-              ctaImages: {
-                google: ctaGoogleImageRef.current,
-                busca: ctaBuscaImageRef.current,
-                areaLogada: ctaAreaLogadaImageRef.current,
-                fotoEnviada: ctaFotoEnviadaImageRef.current,
-              },
-              storyImages: storyImagesRef.current,
-              memeVideos: memeVideosRef.current,
-              snapshotCanvas: snapshotCanvasRef.current,
-            },
+            drawCtx,
             audioTrack,
+            outputAspect,
+            outputPreset,
             fps: useMobileRecording ? 24 : 30,
+            onFrame: (timeMs) => {
+              drawFrame(previewCtx, timeMs, drawCtx);
+            },
             onRecordingStart: () => {
               if (audio && (sfxEvents.length > 0 || musicEvents.length > 0)) {
                 audio.scheduleEvents([...musicEvents, ...sfxEvents], audio.now(), {
@@ -510,7 +655,10 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
             },
             onProgress: (p) => onProgressChange?.(p),
           });
-          return { blob, mimeType: blob.type };
+          return {
+            blob: recorded.blob,
+            mimeType: recorded.mimeType,
+          };
         } finally {
           audioRef.current?.connectMediaElements(
             Array.from(memeVideosRef.current.values()),
@@ -546,8 +694,28 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
 });
 
 function memeRenderUrl(file: string): string {
-  const folder = isLikelyMobileDevice() ? "mobile" : "optimized";
-  return `/memes/${folder}/${encodeURIComponent(file)}`;
+  return `/memes/${encodeURIComponent(file)}`;
+}
+
+async function loadMemeVideo(file: string): Promise<HTMLVideoElement> {
+  const encoded = encodeURIComponent(file);
+  const candidates = [
+    `/memes/${encoded}`,
+    `/memes/optimized/${encoded}`,
+    `/memes/mobile/${encoded}`,
+  ];
+
+  let lastError: unknown;
+  for (const src of candidates) {
+    try {
+      const video = await loadVideo(src);
+      video.dataset.src = src;
+      return video;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(file);
 }
 
 function isLikelyMobileDevice(): boolean {
@@ -558,9 +726,14 @@ function isLikelyMobileDevice(): boolean {
   );
 }
 
-function createRecordingCanvas(targetWidth: number): HTMLCanvasElement {
+function createRecordingCanvas(
+  outputAspect: OutputAspect,
+  outputPreset: OutputPreset,
+  targetWidth?: number
+): HTMLCanvasElement {
+  const dimensions = getRecordingDimensions(outputAspect, targetWidth, outputPreset);
   const canvas = document.createElement("canvas");
-  canvas.width = targetWidth;
-  canvas.height = Math.round((targetWidth * CANVAS_H) / CANVAS_W);
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
   return canvas;
 }

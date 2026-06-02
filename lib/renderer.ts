@@ -61,12 +61,12 @@ function applyIGGradient(
 // ============================================================
 
 /**
- * Font stack matching Instagram's native UI: SF Pro on Apple devices, then
- * platform fallbacks. Keep web fonts out of the canvas so the exported video
- * does not get Inter's slightly different proportions.
+ * Font stack matching Instagram's native UI. Server-side renders run on Linux,
+ * so Inter + Noto Color Emoji are installed in the Docker image to keep text
+ * and emojis close to the browser preview instead of falling back to Liberation.
  */
 const FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
 const IG_DM_TEXT_SIZE = 51;
 const IG_DM_TEXT_WEIGHT = 400;
@@ -2162,6 +2162,7 @@ interface ActiveMemeOverlay {
   key: string;
   elapsedMs: number;
   opacity: number;
+  offsetY?: number;
   rect?: { x: number; y: number; w: number; h: number };
 }
 
@@ -2208,6 +2209,7 @@ function activeMemeOverlay(
         key: `${event.index}:fullscreen:${msg.memeAfter.file}:${event.memeStartMs}`,
         elapsedMs: timeMs - event.memeStartMs,
         opacity: 1,
+        offsetY: msg.memeAfter.offsetY,
       };
     }
   }
@@ -2274,6 +2276,8 @@ function deactivateMemeVideos(memeVideos: Map<string, HTMLVideoElement> | null |
   }
 }
 
+const MEME_VIDEO_HARD_RESYNC_SECONDS = 1.5;
+
 function syncMemeVideo(video: HTMLVideoElement, active: ActiveMemeOverlay) {
   const duration =
     Number.isFinite(video.duration) && video.duration > 0
@@ -2283,12 +2287,14 @@ function syncMemeVideo(video: HTMLVideoElement, active: ActiveMemeOverlay) {
   const targetTime = Math.min(active.elapsedMs / 1000, safeDuration);
   const isNewActivation = video.dataset.memeActiveKey !== active.key;
   video.loop = false;
+  video.playbackRate = 1;
+
   if (isNewActivation) {
     video.dataset.memeActiveKey = active.key;
     video.dataset.memeVisible = "true";
     if (video.readyState > 0) {
       try {
-        video.currentTime = targetTime;
+        video.currentTime = targetTime < 0.2 ? 0 : targetTime;
       } catch {
         /* ignore unsupported seek states */
       }
@@ -2296,7 +2302,7 @@ function syncMemeVideo(video: HTMLVideoElement, active: ActiveMemeOverlay) {
   } else if (
     video.readyState > 0 &&
     !video.seeking &&
-    Math.abs(video.currentTime - targetTime) > 0.45
+    Math.abs(video.currentTime - targetTime) > MEME_VIDEO_HARD_RESYNC_SECONDS
   ) {
     try {
       video.currentTime = targetTime;
@@ -2338,7 +2344,7 @@ function drawMemeOverlay(
     const dw = vw * scale;
     const dh = vh * scale;
     const dx = target.x + (target.w - dw) / 2;
-    const dy = target.y + (target.h - dh) / 2;
+    const dy = target.y + (target.h - dh) / 2 + (active.offsetY ?? 0);
     ctx.globalAlpha *= active.opacity;
     ctx.drawImage(video, dx, dy, dw, dh);
   }

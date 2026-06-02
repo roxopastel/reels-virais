@@ -1591,7 +1591,7 @@ function useMemeFiles(): { files: string[]; reload: () => void } {
 }
 
 function memePreviewUrl(file: string): string {
-  return `/memes/optimized/${encodeURIComponent(file)}`;
+  return `/memes/${encodeURIComponent(file)}`;
 }
 
 function MemeAfterPanel({

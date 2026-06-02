@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import type { VideoPublishMetadata } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ interface GeneratedConversation {
   responseAlternatives: string[];
   sentReply: string;
   finalReceived: string;
+  videoMetadata?: VideoPublishMetadata;
   avatarImageUrl?: string;
   storyImageUrl?: string;
 }
@@ -24,6 +26,12 @@ interface GenerateConversationRequest {
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const FIRST_SENT_MAX_LENGTH = 180;
+const RECEIVED_MAX_LENGTH = 120;
+const SENT_REPLY_MAX_LENGTH = 180;
+const PROFILE_DISPLAY_NAME_MAX_LENGTH = 40;
+const VIDEO_TITLE_MAX_LENGTH = 80;
+const VIDEO_DESCRIPTION_MAX_LENGTH = 260;
 
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
@@ -45,6 +53,27 @@ const RESPONSE_SCHEMA = {
     },
     sentReply: { type: "STRING" },
     finalReceived: { type: "STRING" },
+    videoMetadata: {
+      type: "OBJECT",
+      properties: {
+        title: { type: "STRING" },
+        description: { type: "STRING" },
+        hashtags: {
+          type: "ARRAY",
+          minItems: 4,
+          maxItems: 8,
+          items: { type: "STRING" },
+        },
+        keywords: {
+          type: "ARRAY",
+          minItems: 5,
+          maxItems: 10,
+          items: { type: "STRING" },
+        },
+      },
+      required: ["title", "description", "hashtags", "keywords"],
+      propertyOrdering: ["title", "description", "hashtags", "keywords"],
+    },
   },
   required: [
     "username",
@@ -54,6 +83,7 @@ const RESPONSE_SCHEMA = {
     "responseAlternatives",
     "sentReply",
     "finalReceived",
+    "videoMetadata",
   ],
   propertyOrdering: [
     "username",
@@ -63,6 +93,7 @@ const RESPONSE_SCHEMA = {
     "responseAlternatives",
     "sentReply",
     "finalReceived",
+    "videoMetadata",
   ],
 };
 
@@ -106,6 +137,11 @@ export async function POST(request: Request) {
     "As 4 alternativas precisam ser diferentes entre si: direta, engracada, escolhida e provocativa.",
     "A terceira alternativa do array responseAlternatives e obrigatoriamente a escolhida/copied e deve ser exatamente igual ao campo sentReply.",
     "Nao repita a mesma frase nas alternativas.",
+    "Gere tambem videoMetadata para publicacao do video curto.",
+    "videoMetadata.title deve parecer titulo de Shorts/Reels: natural, curioso, 45 a 80 caracteres, sem emoji e sem hashtag.",
+    "videoMetadata.description deve parecer legenda pronta para upload: 120 a 260 caracteres, com gancho, contexto da conversa e chamada leve para comentario.",
+    "videoMetadata.hashtags deve ter 4 a 8 hashtags curtas sem o caractere #.",
+    "videoMetadata.keywords deve ter 5 a 10 termos de busca relacionados ao tema do video.",
     "Nao use conteudo sexual explicito, menores de idade, drogas pesadas, crime ou assedio.",
     "Mensagens devem ser curtas, como DM real, com girias brasileiras leves.",
     "Nao mencione IA, Gemini, puxeassunto ou geracao automatica dentro das mensagens.",
@@ -283,26 +319,147 @@ function normalizeGeneratedConversation(raw: unknown): GeneratedConversation {
   );
 
   const finalReceived = normalizeReceivedMessage(
-    sanitizeText(source.finalReceived, 90)
+    sanitizeText(source.finalReceived, RECEIVED_MAX_LENGTH)
   );
   const sentReply =
-    sanitizeText(source.sentReply, 110) ||
+    sanitizeText(source.sentReply, SENT_REPLY_MAX_LENGTH) ||
     "entao pronto, agora fiquei curioso de verdade";
   const responseAlternatives = normalizeResponseAlternatives(
     source.responseAlternatives,
     sentReply
   );
-  return {
+  const normalized: GeneratedConversation = {
     username: slugifyUsername(source.username) || "luluzinha",
     profileDisplayName:
-      sanitizeText(source.profileDisplayName, 40) || "Luiza Marqueza",
+      sanitizeText(source.profileDisplayName, PROFILE_DISPLAY_NAME_MAX_LENGTH) ||
+      "Luiza Marqueza",
     firstSent:
-      sanitizeText(source.firstSent, 90) || "me responde uma coisa rapidinho",
+      sanitizeText(source.firstSent, FIRST_SENT_MAX_LENGTH) ||
+      "me responde uma coisa rapidinho",
     receivedBatch,
     responseAlternatives,
     sentReply,
     finalReceived: finalReceived || "kkkk pior que essa foi boa, gostei",
   };
+  normalized.videoMetadata = normalizeVideoMetadata(
+    source.videoMetadata,
+    normalized
+  );
+  return normalized;
+}
+
+function normalizeVideoMetadata(
+  value: unknown,
+  conversation: GeneratedConversation
+): VideoPublishMetadata {
+  const source = (value ?? {}) as Partial<VideoPublishMetadata>;
+  const hashtags = normalizeHashtags(source.hashtags);
+  const keywords = normalizeKeywords(source.keywords, conversation, hashtags);
+  const title =
+    sanitizeVideoTitle(source.title) || buildFallbackVideoTitle(conversation);
+  const description =
+    sanitizeText(source.description, VIDEO_DESCRIPTION_MAX_LENGTH) ||
+    buildFallbackVideoDescription(conversation);
+
+  return {
+    title,
+    description,
+    hashtags,
+    keywords,
+  };
+}
+
+function sanitizeVideoTitle(value: unknown): string {
+  return sanitizeText(value, VIDEO_TITLE_MAX_LENGTH)
+    .replace(/[<>:"/\\|?*#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeHashtags(value: unknown): string[] {
+  const defaults = [
+    "conversa",
+    "direct",
+    "instagram",
+    "cantada",
+    "flertando",
+    "viral",
+  ];
+  const source = Array.isArray(value) ? value : [];
+  return uniqueStrings(
+    [...source, ...defaults].map((item) => sanitizeHashtag(item)).filter(Boolean)
+  ).slice(0, 8);
+}
+
+function sanitizeHashtag(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/^#+/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "")
+    .slice(0, 32);
+}
+
+function normalizeKeywords(
+  value: unknown,
+  conversation: GeneratedConversation,
+  hashtags: string[]
+): string[] {
+  const defaults = [
+    "conversa no direct",
+    "instagram dm",
+    "cantada leve",
+    "puxe assunto",
+    conversation.profileDisplayName,
+    conversation.username,
+    ...hashtags,
+  ];
+  const source = Array.isArray(value) ? value : [];
+  return uniqueStrings(
+    [...source, ...defaults]
+      .map((item) => sanitizeKeyword(item))
+      .filter(Boolean)
+  ).slice(0, 10);
+}
+
+function sanitizeKeyword(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/^#+/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48);
+}
+
+function buildFallbackVideoTitle(conversation: GeneratedConversation): string {
+  if (conversation.sentReply) {
+    return `A resposta ao story que fez ela continuar a conversa`;
+  }
+  return "A conversa no direct que virou assunto";
+}
+
+function buildFallbackVideoDescription(
+  conversation: GeneratedConversation
+): string {
+  const hook = conversation.firstSent || "Ele respondeu o story dela";
+  return sanitizeText(
+    `${hook} e a conversa tomou outro rumo. Um print em formato de video curto, com final leve e aquela resposta que da vontade de comentar.`,
+    VIDEO_DESCRIPTION_MAX_LENGTH
+  );
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const value of values) {
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+  return unique;
 }
 
 function normalizeResponseAlternatives(
@@ -310,7 +467,9 @@ function normalizeResponseAlternatives(
   sentReply: string
 ): string[] {
   const source = Array.isArray(value)
-    ? value.map((item) => sanitizeText(item, 110)).filter(Boolean)
+    ? value
+        .map((item) => sanitizeText(item, SENT_REPLY_MAX_LENGTH))
+        .filter(Boolean)
     : [];
   const alternatives = [
     source[0] || makeDirectAlternative(sentReply),
@@ -472,7 +631,9 @@ function normalizeTextArray(
   fallback: string[]
 ): string[] {
   const items = Array.isArray(value)
-    ? value.map((item) => sanitizeText(item, 95)).filter(Boolean)
+    ? value
+        .map((item) => sanitizeText(item, RECEIVED_MAX_LENGTH))
+        .filter(Boolean)
     : [];
   const limited = items.slice(0, max);
   while (limited.length < min) {
@@ -483,7 +644,9 @@ function normalizeTextArray(
 
 function sanitizeText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return "";
-  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+  return Array.from(value.replace(/\s+/g, " ").trim())
+    .slice(0, maxLength)
+    .join("");
 }
 
 function slugifyUsername(value: unknown): string {

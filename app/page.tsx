@@ -5,15 +5,31 @@ import { Loader2, Pause, Play, Sparkles, Video, Wand2 } from "lucide-react";
 import { Preview, type PreviewHandle } from "@/components/Preview";
 import { Form } from "@/components/Form";
 import { ResultModal } from "@/components/ResultModal";
-import type { ConversationConfig, Message } from "@/lib/types";
+import type {
+  ConversationConfig,
+  Message,
+  VideoPublishMetadata,
+} from "@/lib/types";
 import { buildTimings, totalDuration } from "@/lib/animation";
-import { CANVAS_H, CANVAS_W } from "@/lib/renderer";
 import { musicFileToUrl } from "@/lib/audio";
 
 const DEFAULT_CONFIG: ConversationConfig = {
   username: "luluzinha",
   subtitle: "Ativo(a) agora",
   avatarDataUrl: null,
+  videoMetadata: {
+    title: "A resposta ao story que virou conversa no direct",
+    description:
+      "Ele respondeu o story dela com uma cantada leve e a conversa tomou outro rumo. Um video curto com cara de print que da vontade de mandar para os amigos.",
+    hashtags: ["conversa", "direct", "instagram", "cantada", "flertando", "viral"],
+    keywords: [
+      "conversa no direct",
+      "instagram dm",
+      "cantada leve",
+      "puxe assunto",
+      "video viral",
+    ],
+  },
   messages: [
     {
       id: "m1",
@@ -52,6 +68,11 @@ const DEFAULT_CONFIG: ConversationConfig = {
         typingSfx: "none",
         appearSfx: "notification.mp3",
       },
+      memeAfter: {
+        file: "anota.mp4",
+        delayMs: 1200,
+        offsetY: 320,
+      },
       callToActionAfter: {
         domain: "puxeassunto.com",
         siteTagline:
@@ -70,10 +91,10 @@ const DEFAULT_CONFIG: ConversationConfig = {
       },
       memeOverlay: {
         file: "pi.mp4",
-        durationMs: 3000,
+        durationMs: 5000,
         opacity: 0.45,
         x: 60,
-        y: 1390,
+        y: 1450,
         width: 1080,
         height: 690,
       },
@@ -110,6 +131,7 @@ interface GeneratedConversation {
   responseAlternatives?: string[];
   sentReply: string;
   finalReceived: string;
+  videoMetadata?: VideoPublishMetadata;
   avatarImageUrl?: string;
   storyImageUrl?: string;
 }
@@ -117,6 +139,9 @@ interface GeneratedConversation {
 export default function HomePage() {
   const [config, setConfig] = useState<ConversationConfig>(DEFAULT_CONFIG);
   const [recording, setRecording] = useState(false);
+  const [recordingMode, setRecordingMode] = useState<
+    "browser" | "source" | "server" | null
+  >(null);
   const [generatingConversation, setGeneratingConversation] = useState(false);
   const [photoFiles, setPhotoFiles] = useState<string[]>([]);
   const [musicFiles, setMusicFiles] = useState<string[]>([]);
@@ -124,6 +149,7 @@ export default function HomePage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
+  const [resultSourceBlob, setResultSourceBlob] = useState<Blob | null>(null);
   const previewRef = useRef<PreviewHandle | null>(null);
 
   useEffect(() => {
@@ -162,18 +188,88 @@ export default function HomePage() {
     };
   }, []);
 
-  const handleRecord = async () => {
+  const handleRecordBrowser = async () => {
     if (recording) return;
+    setRecording(true);
+    setRecordingMode("browser");
+    setProgress(0);
     try {
-      const result = await previewRef.current?.record();
-      if (result) {
+      const result = await previewRef.current?.record({
+        outputAspect: "9:16",
+        outputPreset: "social",
+      });
+      if (result?.blob) {
         setResultBlob(result.blob);
+        setResultSourceBlob(null);
       }
     } catch (err) {
-      console.error("Erro ao gravar:", err);
+      console.error("Erro ao gravar no navegador:", err);
       alert(
-        "Falha ao gravar o vídeo. Tente em outro navegador (Chrome / Edge recomendado)."
+        err instanceof Error
+          ? err.message
+          : "Falha ao gerar o vídeo no navegador."
       );
+    } finally {
+      setRecording(false);
+      setRecordingMode(null);
+      setProgress(0);
+    }
+  };
+
+  const handleGenerateSource = async () => {
+    if (recording) return;
+    setRecording(true);
+    setRecordingMode("source");
+    setProgress(0);
+    try {
+      const result = await previewRef.current?.record({
+        outputAspect: "9:16",
+        outputPreset: "source",
+      });
+      if (result?.blob) {
+        setResultSourceBlob(result.blob);
+      }
+    } catch (err) {
+      console.error("Erro ao gerar 1180x2556:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Falha ao gerar a versão 1180×2556."
+      );
+    } finally {
+      setRecording(false);
+      setRecordingMode(null);
+      setProgress(0);
+    }
+  };
+
+  const handleRecordServer = async () => {
+    if (recording) return;
+    setRecording(true);
+    setRecordingMode("server");
+    setProgress(0);
+    try {
+      const response = await fetch("/api/render-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ config, outputAspect: "9:16" }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(data?.error || "Falha ao gerar o vídeo.");
+      }
+      setResultBlob(await response.blob());
+    } catch (err) {
+      console.error("Erro ao gravar no servidor:", err);
+      alert(err instanceof Error ? err.message : "Falha ao gerar o vídeo.");
+    } finally {
+      setRecording(false);
+      setRecordingMode(null);
+      setProgress(0);
     }
   };
 
@@ -272,12 +368,16 @@ export default function HomePage() {
     });
   };
 
-  const closeModal = () => setResultBlob(null);
+  const closeModal = () => {
+    setResultBlob(null);
+    setResultSourceBlob(null);
+  };
   const regenerate = () => {
     setResultBlob(null);
+    setResultSourceBlob(null);
     // Small delay so the modal closes before we start recording again
     setTimeout(() => {
-      handleRecord();
+      handleRecordBrowser();
     }, 100);
   };
 
@@ -335,41 +435,64 @@ export default function HomePage() {
             onProgressChange={setProgress}
           />
 
-          {/* Generate button */}
-          <button
-            type="button"
-            onClick={handleRecord}
-            disabled={recording}
-            className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-[#FF5C7A] via-[#9156EC] to-[#4585FF] px-6 py-4 font-semibold text-white shadow-lg shadow-purple-900/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {recording ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Gravando... {Math.round(progress * 100)}%</span>
-              </>
-            ) : (
-              <>
-                <Wand2 className="h-5 w-5" />
-                <span>Gerar vídeo</span>
-              </>
-            )}
+          {/* Generate buttons */}
+          <div className="grid grid-cols-1 gap-3">
+            <button
+              type="button"
+              onClick={handleRecordBrowser}
+              disabled={recording}
+              className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl border border-white/10 bg-ig-card px-4 py-4 font-semibold text-white transition hover:border-white/25 hover:bg-ig-border disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {recordingMode === "browser" ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Gravando... {Math.round(progress * 100)}%</span>
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-5 w-5" />
+                  <span>Gerar vídeo</span>
+                </>
+              )}
 
-            {recording && (
-              <div
-                className="absolute inset-x-0 bottom-0 h-1 bg-white/30"
-                style={{ width: `${progress * 100}%` }}
-              />
-            )}
-          </button>
+              {recordingMode === "browser" && progress > 0 && (
+                <div
+                  className="absolute inset-x-0 bottom-0 h-1 bg-white/30"
+                  style={{ width: `${progress * 100}%` }}
+                />
+              )}
+            </button>
+
+            {/*
+            <button
+              type="button"
+              onClick={handleRecordServer}
+              disabled={recording}
+              className="group relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-[#FF5C7A] via-[#9156EC] to-[#4585FF] px-4 py-4 font-semibold text-white shadow-lg shadow-purple-900/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {recordingMode === "server" ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Gerando no servidor...</span>
+                </>
+              ) : (
+                <>
+                  <Video className="h-5 w-5" />
+                  <span>Gerar MP4 no servidor</span>
+                </>
+              )}
+            </button>
+            */}
+          </div>
 
           <div className="rounded-xl border border-ig-border bg-ig-card/50 p-4 text-xs leading-relaxed text-ig-muted">
             <p className="mb-1 font-semibold text-white">Sobre o vídeo</p>
             <ul className="list-inside list-disc space-y-0.5">
-              <li>Resolução: {CANVAS_W}×{CANVAS_H} (vertical)</li>
               <li>
-                Formato: <strong className="text-white">MP4</strong> (H.264) se
-                suportado pelo navegador
+                Saída padrão: 1080×1920
               </li>
+              <li>No modal há opção sob demanda para gerar 1180×2556</li>
+              <li>Formato: MP4 quando suportado; caso contrário, WebM</li>
               <li>Duração: ~{estimateDuration(config).toFixed(1)}s</li>
               <li>Você visualiza o resultado antes de baixar</li>
             </ul>
@@ -380,8 +503,14 @@ export default function HomePage() {
       {/* Result preview modal */}
       <ResultModal
         blob={resultBlob}
+        sourceBlob={resultSourceBlob}
         username={config.username}
+        videoMetadata={config.videoMetadata}
+        outputAspect="9:16"
+        outputPreset="social"
+        sourceGenerating={recordingMode === "source"}
         onClose={closeModal}
+        onGenerateSource={handleGenerateSource}
         onRegenerate={regenerate}
       />
       {photoModalOpen && (
@@ -666,6 +795,7 @@ function buildGeneratedConversationConfig(
       ? generated.receivedBatch.slice(0, 3)
       : ["pera kkkkk", "isso foi muito especifico"];
   const lastReceivedIndex = receivedBatch.length - 1;
+  const finalReceivedText = generated.finalReceived?.trim();
 
   const messages: Message[] = [
     {
@@ -697,6 +827,15 @@ function buildGeneratedConversationConfig(
       },
       ...(index === lastReceivedIndex
         ? {
+            ...(!finalReceivedText
+              ? {
+                  memeAfter: {
+                    file: "anota.mp4",
+                    delayMs: 1200,
+                    offsetY: 320,
+                  },
+                }
+              : {}),
             callToActionAfter: {
               domain: "puxeassunto.com",
               suggestedResponse: generated.sentReply,
@@ -720,25 +859,30 @@ function buildGeneratedConversationConfig(
       },
       memeOverlay: {
         file: "pi.mp4",
-        durationMs: 3000,
+        durationMs: 5000,
         opacity: 0.45,
         x: 60,
-        y: 1390,
+        y: 1450,
         width: 1080,
         height: 690,
       },
     },
   ];
 
-  if (generated.finalReceived?.trim()) {
+  if (finalReceivedText) {
     messages.push({
       id: `${prefix}-last`,
       side: "received",
-      text: generated.finalReceived.trim(),
-      typingDurationMs: receivedTypingDurationMs(generated.finalReceived),
+      text: finalReceivedText,
+      typingDurationMs: receivedTypingDurationMs(finalReceivedText),
       audio: {
         typingSfx: "none",
         appearSfx: "notification.mp3",
+      },
+      memeAfter: {
+        file: "anota.mp4",
+        delayMs: 1200,
+        offsetY: 320,
       },
     });
   }
@@ -747,6 +891,7 @@ function buildGeneratedConversationConfig(
     ...current,
     username: generated.username || current.username,
     avatarDataUrl: generated.avatarImageUrl ?? current.avatarDataUrl,
+    videoMetadata: generated.videoMetadata ?? current.videoMetadata,
     profileDisplayName:
       generated.profileDisplayName || current.profileDisplayName,
     messages,

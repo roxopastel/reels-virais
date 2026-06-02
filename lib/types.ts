@@ -2,6 +2,13 @@ export type Theme = "dark" | "light";
 
 export type MessageSide = "sent" | "received";
 
+export interface VideoPublishMetadata {
+  title: string;
+  description: string;
+  hashtags: string[];
+  keywords: string[];
+}
+
 /** Optional "story reply" attachment shown above the message bubble:
  *  a small grey label and a vertical thumbnail of the story being replied to. */
 export interface StoryReply {
@@ -70,6 +77,10 @@ export interface Message {
    *  edited mode. `file` is the filename inside `/public/memes/`. */
   memeAfter?: {
     file: string;
+    /** Delay after the message/overlay finishes before the meme starts. */
+    delayMs?: number;
+    /** Vertical render offset in canvas pixels. Positive values move it down. */
+    offsetY?: number;
   };
   /** Optional meme video drawn over the frozen conversation after this
    *  message. Coordinates are canvas pixels (1080x1920). */
@@ -113,6 +124,9 @@ export interface ConversationConfig {
   username: string;
   subtitle: string;
   avatarDataUrl: string | null;
+  /** AI-generated publishing metadata used for filenames, descriptions and
+   *  server-side MP4 tags. */
+  videoMetadata?: VideoPublishMetadata;
   /** Full conversation. The LAST message animates with typing indicator (if received) or slide-in (if sent). */
   messages: Message[];
   typingDurationMs: number;

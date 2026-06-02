@@ -1,11 +1,23 @@
 import { CANVAS_H, CANVAS_W, drawFrame, type DrawContext } from "./renderer";
 import { buildTimings, totalDuration } from "./animation";
+import type { VideoPublishMetadata } from "./types";
+import { filenameBaseFromTitle } from "./videoMetadata";
+
+export type OutputAspect = "9:16" | "16:9";
+export type OutputPreset = "source" | "social";
+
+export interface RecordingDimensions {
+  width: number;
+  height: number;
+}
 
 export interface RecordOptions {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   drawCtx: DrawContext;
   fps?: number;
+  outputAspect?: OutputAspect;
+  outputPreset?: OutputPreset;
   onProgress?: (progress: number) => void;
   /** Optional audio track to bake into the recording (used by "edited" mode
    *  to include the typing/send/notification SFX). */
@@ -14,6 +26,27 @@ export interface RecordOptions {
    *  before the rAF loop begins). Used to anchor SFX scheduling to the same
    *  clock as the video. */
   onRecordingStart?: () => void;
+  /** Called after each captured animation frame is drawn. Used by the browser
+   *  UI to mirror the exact recording timeline on the visible preview. */
+  onFrame?: (timeMs: number) => void;
+}
+
+export interface ExtraRecordOutput {
+  key: string;
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  outputAspect?: OutputAspect;
+  outputPreset?: OutputPreset;
+}
+
+export interface RecordAllOptions extends RecordOptions {
+  extraOutputs?: ExtraRecordOutput[];
+}
+
+export interface RecordAllResult {
+  blob: Blob;
+  mimeType: string;
+  extraBlobs: Record<string, Blob>;
 }
 
 /**
@@ -67,44 +100,81 @@ export function getRecorderMimeType(): string {
   return pickMimeType(false);
 }
 
+export function getRecordingDimensions(
+  outputAspect: OutputAspect,
+  targetWidth?: number,
+  outputPreset: OutputPreset = "source"
+): RecordingDimensions {
+  if (outputAspect === "16:9") {
+    const width = targetWidth ?? 1920;
+    return { width, height: Math.round((width * 9) / 16) };
+  }
+
+  if (outputPreset === "social") {
+    return { width: 1080, height: 1920 };
+  }
+
+  if (!targetWidth) {
+    return { width: CANVAS_W, height: CANVAS_H };
+  }
+  return { width: targetWidth, height: Math.round((targetWidth * CANVAS_H) / CANVAS_W) };
+}
+
 /**
  * Records the canvas to a video blob.
  * Drives the animation deterministically and captures via canvas.captureStream.
  */
 export async function recordConversation(opts: RecordOptions): Promise<Blob> {
+  const result = await recordConversationAll(opts);
+  return result.blob;
+}
+
+export async function recordConversationAll(
+  opts: RecordAllOptions
+): Promise<RecordAllResult> {
   const { canvas, ctx, drawCtx, onProgress } = opts;
   const fps = opts.fps ?? 30;
-  const scaleX = canvas.width / CANVAS_W;
-  const scaleY = canvas.height / CANVAS_H;
+  const outputAspect = opts.outputAspect ?? "9:16";
+  const outputPreset = opts.outputPreset ?? "source";
 
   if (typeof MediaRecorder === "undefined") {
     throw new Error("MediaRecorder não é suportado neste navegador.");
   }
 
-  // We use a manual-frame approach for deterministic timing:
-  // - Use captureStream(0) (manual mode if supported) OR captureStream(fps)
-  // - Drive a real-time loop at the desired fps, drawing each frame
+  const outputs = [
+    { key: "__primary", canvas, ctx, outputAspect, outputPreset },
+    ...(opts.extraOutputs ?? []).map((output) => ({
+      key: output.key,
+      canvas: output.canvas,
+      ctx: output.ctx,
+      outputAspect: output.outputAspect ?? outputAspect,
+      outputPreset: output.outputPreset ?? outputPreset,
+    })),
+  ];
 
-  const stream = canvas.captureStream(fps);
-  if (opts.audioTrack) {
-    try {
-      stream.addTrack(opts.audioTrack);
-    } catch {
-      /* ignore — audio track is best-effort */
+  const recorders = outputs.map((output) => {
+    const stream = output.canvas.captureStream(fps);
+    if (opts.audioTrack) {
+      try {
+        stream.addTrack(opts.audioTrack);
+      } catch {
+        /* audio track is best-effort for secondary outputs */
+      }
     }
-  }
-  const mimeType = pickMimeType(!!opts.audioTrack);
-  const videoBitsPerSecond = Math.round(canvas.width * canvas.height * 4);
-  const recorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond,
-    audioBitsPerSecond: opts.audioTrack ? 128_000 : undefined,
+    const mimeType = pickMimeType(!!opts.audioTrack);
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: Math.round(
+        output.canvas.width * output.canvas.height * (fps >= 60 ? 6 : 4)
+      ),
+      audioBitsPerSecond: opts.audioTrack ? 128_000 : undefined,
+    });
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+    return { ...output, recorder, chunks, mimeType };
   });
-
-  const chunks: Blob[] = [];
-  recorder.ondataavailable = (e) => {
-    if (e.data && e.data.size > 0) chunks.push(e.data);
-  };
 
   const total = totalDuration(drawCtx.timings);
   let rafId = 0;
@@ -112,31 +182,78 @@ export async function recordConversation(opts: RecordOptions): Promise<Blob> {
 
   // Draw initial frame BEFORE starting the recorder so the very first
   // captured frame is correct and not blank.
-  drawScaledFrame(ctx, 0, drawCtx, scaleX, scaleY);
+  for (const output of recorders) {
+    drawOutputFrame(
+      output.ctx,
+      0,
+      drawCtx,
+      output.outputAspect,
+      output.outputPreset,
+      output.canvas.width,
+      output.canvas.height
+    );
+  }
+  opts.onFrame?.(0);
 
-  return new Promise<Blob>((resolve, reject) => {
-    recorder.onerror = (e) => reject(e);
-    recorder.onstop = () => {
-      cancelAnimationFrame(rafId);
-      const blob = new Blob(chunks, { type: mimeType });
-      resolve(blob);
-    };
+  return new Promise<RecordAllResult>((resolve, reject) => {
+    let stopped = 0;
+    let rejected = false;
+    const blobs: Record<string, Blob> = {};
+
+    for (const output of recorders) {
+      output.recorder.onerror = (e) => {
+        if (rejected) return;
+        rejected = true;
+        reject(e);
+      };
+      output.recorder.onstop = () => {
+        stopped += 1;
+        blobs[output.key] = new Blob(output.chunks, { type: output.mimeType });
+        if (stopped !== recorders.length) return;
+
+        cancelAnimationFrame(rafId);
+        const primary = blobs.__primary;
+        delete blobs.__primary;
+        resolve({
+          blob: primary,
+          mimeType: primary.type,
+          extraBlobs: blobs,
+        });
+      };
+    }
 
     const loop = () => {
       const elapsed = performance.now() - startWallClock;
       const t = Math.min(elapsed, total);
-      drawScaledFrame(ctx, t, drawCtx, scaleX, scaleY);
+      for (const output of recorders) {
+        drawOutputFrame(
+          output.ctx,
+          t,
+          drawCtx,
+          output.outputAspect,
+          output.outputPreset,
+          output.canvas.width,
+          output.canvas.height
+        );
+      }
+      opts.onFrame?.(t);
       if (onProgress) onProgress(Math.min(t / total, 1));
       if (elapsed >= total) {
         // give recorder a beat to flush the last frame
-        setTimeout(() => recorder.stop(), 200);
+        setTimeout(() => {
+          for (const output of recorders) {
+            if (output.recorder.state !== "inactive") {
+              output.recorder.stop();
+            }
+          }
+        }, 200);
         return;
       }
       rafId = requestAnimationFrame(loop);
     };
 
     // Request a fresh data chunk every 250ms so we don't lose data on stop
-    recorder.start(250);
+    for (const output of recorders) output.recorder.start(250);
     // Use rAF to ensure the initial frame has reached the GPU, then start clock
     requestAnimationFrame(() => {
       startWallClock = performance.now();
@@ -146,14 +263,37 @@ export async function recordConversation(opts: RecordOptions): Promise<Blob> {
   });
 }
 
-function drawScaledFrame(
+function drawOutputFrame(
   ctx: CanvasRenderingContext2D,
   timeMs: number,
   drawCtx: DrawContext,
-  scaleX: number,
-  scaleY: number
+  outputAspect: OutputAspect,
+  outputPreset: OutputPreset,
+  width: number,
+  height: number
 ) {
-  ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  if (outputAspect === "16:9") {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, width, height);
+    const scale = Math.min(width / CANVAS_W, height / CANVAS_H);
+    const dx = (width - CANVAS_W * scale) / 2;
+    const dy = (height - CANVAS_H * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, dx, dy);
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, width, height);
+    const scale =
+      outputPreset === "social"
+        ? Math.max(width / CANVAS_W, height / CANVAS_H)
+        : Math.min(width / CANVAS_W, height / CANVAS_H);
+    const dx = (width - CANVAS_W * scale) / 2;
+    const dy = (height - CANVAS_H * scale) / 2;
+    ctx.setTransform(scale, 0, 0, scale, dx, dy);
+  }
+
   drawFrame(ctx, timeMs, drawCtx);
 }
 
@@ -168,8 +308,25 @@ export function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function suggestFilename(username: string, mimeType: string): string {
+export function suggestFilename(
+  username: string,
+  mimeType: string,
+  outputAspect: OutputAspect = "9:16",
+  outputPreset: OutputPreset = "source",
+  metadata?: VideoPublishMetadata | null
+): string {
   const ext = mimeType.includes("mp4") ? "mp4" : "webm";
+  const titleBase = filenameBaseFromTitle(metadata?.title);
+  if (titleBase) {
+    const titleSuffix =
+      outputPreset === "social"
+        ? ""
+        : outputAspect === "16:9"
+          ? " - 16x9"
+          : " - 1180x2556";
+    return `${titleBase}${titleSuffix}.${ext}`;
+  }
+
   const safe = (username || "conversa")
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, "_")
@@ -178,7 +335,13 @@ export function suggestFilename(username: string, mimeType: string): string {
     .toISOString()
     .replace(/[:.]/g, "-")
     .slice(0, 19);
-  return `${safe}_${ts}.${ext}`;
+  const suffix =
+    outputPreset === "social"
+      ? "_1080x1920"
+      : outputAspect === "16:9"
+        ? "_16x9"
+        : "";
+  return `${safe}_${ts}${suffix}.${ext}`;
 }
 
 export { buildTimings, totalDuration };
