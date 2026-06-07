@@ -236,6 +236,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         if (img) {
           ctaCustomScreenshotRef.current = img;
           ctaCustomScreenshotDomainRef.current = ctaDomain;
+          // Força o preview a redesenhar com a imagem nova
+          setIsReady((r) => !r);
         }
       } catch {
         // silencia erro — cena vai usar o fallback desenhado no Canvas
