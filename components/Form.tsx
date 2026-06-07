@@ -1825,12 +1825,14 @@ function CallToActionAfterPanel({
 }) {
   const enabled = !!message.callToActionAfter;
   const cfg = message.callToActionAfter;
+  const mode = cfg?.ctaMode ?? "site";
 
   const setEnabled = (next: boolean) => {
     if (next) {
       onChange({
         ...message,
         callToActionAfter: {
+          ctaMode: cfg?.ctaMode ?? "site",
           domain: cfg?.domain ?? "puxeassunto.com",
           suggestedResponse: cfg?.suggestedResponse ?? "",
           responseAlternatives: cfg?.responseAlternatives ?? ["", "", "", ""],
@@ -1861,6 +1863,13 @@ function CallToActionAfterPanel({
     update({ responseAlternatives: next });
   };
 
+  const MODE_OPTIONS: { value: string; label: string; emoji: string; desc: string }[] = [
+    { value: "site",      label: "Site externo",   emoji: "🌐", desc: "Safari → digita domínio → mostra respostas sugeridas" },
+    { value: "whatsapp",  label: "WhatsApp",        emoji: "💬", desc: "Abre o WhatsApp com mensagem pré-preenchida" },
+    { value: "linknabio", label: "Link na bio",     emoji: "🔗", desc: "Mostra o perfil do Instagram com link em destaque" },
+    { value: "simples",   label: "Overlay simples", emoji: "✨", desc: "Tela personalizada sem abrir Safari — título + botão" },
+  ];
+
   return (
     <div className="border-t border-ig-border/60 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
@@ -1881,68 +1890,112 @@ function CallToActionAfterPanel({
       </div>
 
       {enabled && (
-        <div className="mt-2 space-y-2">
-          <p className="rounded-md border border-purple-500/20 bg-purple-500/5 px-2 py-1.5 text-[11px] leading-relaxed text-ig-muted">
-            Após esta mensagem aparecer no Direct, simula um print da tela,
-            abre o Safari, pesquisa <code className="text-white">{cfg?.domain || "puxeassunto.com"}</code>,
-            acessa o site e mostra a resposta sugerida. A próxima mensagem
-            enviada será a resposta &quot;copiada&quot;. Depois disso a conversa
-            continua normalmente.
-          </p>
+        <div className="mt-3 space-y-3">
 
-          <Field label="Domínio digitado no Safari">
-            <input
-              type="text"
-              value={cfg?.domain ?? ""}
-              onChange={(e) => update({ domain: e.target.value })}
-              placeholder="puxeassunto.com"
-              disabled={disabled}
-              className="input"
-            />
-          </Field>
-
-          <Field label="Resposta sugerida no site (deixe vazio para usar a próxima mensagem)">
-            <textarea
-              value={cfg?.suggestedResponse ?? ""}
-              onChange={(e) =>
-                update({ suggestedResponse: e.target.value })
-              }
-              placeholder="Vazio = usa o texto da próxima mensagem"
-              rows={2}
-              disabled={disabled}
-              className="input"
-            />
-          </Field>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {[0, 1, 2, 3].map((index) => (
-              <Field key={index} label={`Resposta ${index + 1}`}>
-                <textarea
-                  value={cfg?.responseAlternatives?.[index] ?? ""}
-                  onChange={(e) => updateAlternative(index, e.target.value)}
-                  placeholder={
-                    index === 2
-                      ? "Vazio = usa a resposta sugerida"
-                      : "Vazio = gera uma alternativa"
-                  }
-                  rows={2}
+          {/* Seletor de modo */}
+          <div>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-ig-muted">Tipo de CTA</p>
+            <div className="grid grid-cols-2 gap-2">
+              {MODE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
                   disabled={disabled}
-                  className="input"
-                />
-              </Field>
-            ))}
+                  onClick={() => update({ ctaMode: opt.value as "site" | "whatsapp" | "linknabio" | "simples" })}
+                  className={`flex flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition ${
+                    mode === opt.value
+                      ? "border-ig-purple bg-ig-purple/15 text-white"
+                      : "border-white/10 bg-white/[0.03] text-ig-muted hover:border-white/25 hover:text-white"
+                  }`}
+                >
+                  <span className="text-base">{opt.emoji} <span className="text-[12px] font-semibold">{opt.label}</span></span>
+                  <span className="text-[10px] leading-tight opacity-70">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <Field label="Subtítulo do site (tagline)">
-            <input
-              type="text"
-              value={cfg?.siteTagline ?? ""}
-              onChange={(e) => update({ siteTagline: e.target.value })}
-              placeholder="Insira o print da conversa e nós sugerimos a resposta perfeita."
-              disabled={disabled}
-              className="input"
-            />
-          </Field>
+          {/* Campos por modo */}
+
+          {mode === "site" && (
+            <div className="space-y-2">
+              <p className="rounded-md border border-purple-500/20 bg-purple-500/5 px-2 py-1.5 text-[11px] leading-relaxed text-ig-muted">
+                Abre o Safari, pesquisa <code className="text-white">{cfg?.domain || "puxeassunto.com"}</code>,
+                mostra a resposta sugerida e as alternativas. A próxima mensagem enviada será a resposta &quot;copiada&quot;.
+              </p>
+              <Field label="Domínio digitado no Safari">
+                <input type="text" value={cfg?.domain ?? ""} onChange={(e) => update({ domain: e.target.value })} placeholder="puxeassunto.com" disabled={disabled} className="input" />
+              </Field>
+              <Field label="Resposta sugerida (vazio = usa a próxima mensagem)">
+                <textarea value={cfg?.suggestedResponse ?? ""} onChange={(e) => update({ suggestedResponse: e.target.value })} placeholder="Vazio = usa o texto da próxima mensagem" rows={2} disabled={disabled} className="input" />
+              </Field>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[0, 1, 2, 3].map((index) => (
+                  <Field key={index} label={`Resposta ${index + 1}`}>
+                    <textarea value={cfg?.responseAlternatives?.[index] ?? ""} onChange={(e) => updateAlternative(index, e.target.value)} placeholder={index === 2 ? "Vazio = usa a resposta sugerida" : "Vazio = gera uma alternativa"} rows={2} disabled={disabled} className="input" />
+                  </Field>
+                ))}
+              </div>
+              <Field label="Tagline do site">
+                <input type="text" value={cfg?.siteTagline ?? ""} onChange={(e) => update({ siteTagline: e.target.value })} placeholder="Insira o print da conversa e nós sugerimos a resposta perfeita." disabled={disabled} className="input" />
+              </Field>
+            </div>
+          )}
+
+          {mode === "whatsapp" && (
+            <div className="space-y-2">
+              <p className="rounded-md border border-green-500/20 bg-green-500/5 px-2 py-1.5 text-[11px] leading-relaxed text-ig-muted">
+                Mostra uma tela estilo WhatsApp com o número e a mensagem pré-preenchida — convida o espectador a abrir o WA.
+              </p>
+              <Field label="Número com DDI (ex: 5511999998888)">
+                <input type="text" value={cfg?.whatsappNumber ?? ""} onChange={(e) => update({ whatsappNumber: e.target.value })} placeholder="5511999998888" disabled={disabled} className="input" />
+              </Field>
+              <Field label="Mensagem pré-preenchida">
+                <textarea value={cfg?.whatsappMessage ?? ""} onChange={(e) => update({ whatsappMessage: e.target.value })} placeholder="Oi! Vi seu perfil e quero saber mais." rows={2} disabled={disabled} className="input" />
+              </Field>
+            </div>
+          )}
+
+          {mode === "linknabio" && (
+            <div className="space-y-2">
+              <p className="rounded-md border border-pink-500/20 bg-pink-500/5 px-2 py-1.5 text-[11px] leading-relaxed text-ig-muted">
+                Abre o perfil do Instagram com o link na bio em destaque — ideal para direcionar para um produto ou landing page.
+              </p>
+              <Field label="URL do link na bio">
+                <input type="text" value={cfg?.bioUrl ?? ""} onChange={(e) => update({ bioUrl: e.target.value })} placeholder="meusite.com/oferta" disabled={disabled} className="input" />
+              </Field>
+              <Field label="Texto do botão">
+                <input type="text" value={cfg?.bioButtonLabel ?? ""} onChange={(e) => update({ bioButtonLabel: e.target.value })} placeholder="Acessar link na bio →" disabled={disabled} className="input" />
+              </Field>
+            </div>
+          )}
+
+          {mode === "simples" && (
+            <div className="space-y-2">
+              <p className="rounded-md border border-violet-500/20 bg-violet-500/5 px-2 py-1.5 text-[11px] leading-relaxed text-ig-muted">
+                Overlay personalizado direto — sem abrir Safari. Ótimo para CTAs genéricas: &quot;salva esse contato&quot;, &quot;segue o perfil&quot;, etc.
+              </p>
+              <Field label="Emoji / ícone central">
+                <input type="text" value={cfg?.simpleEmoji ?? ""} onChange={(e) => update({ simpleEmoji: e.target.value })} placeholder="🔥" disabled={disabled} className="input" />
+              </Field>
+              <Field label="Título principal">
+                <input type="text" value={cfg?.simpleTitle ?? ""} onChange={(e) => update({ simpleTitle: e.target.value })} placeholder="Aproveite essa oferta" disabled={disabled} className="input" />
+              </Field>
+              <Field label="Subtítulo / descrição">
+                <textarea value={cfg?.simpleSubtitle ?? ""} onChange={(e) => update({ simpleSubtitle: e.target.value })} placeholder="Uma frase curta que complementa o título." rows={2} disabled={disabled} className="input" />
+              </Field>
+              <Field label="Texto do botão">
+                <input type="text" value={cfg?.simpleButtonLabel ?? ""} onChange={(e) => update({ simpleButtonLabel: e.target.value })} placeholder="Quero saber mais →" disabled={disabled} className="input" />
+              </Field>
+              <Field label="Cor de fundo (hex)">
+                <div className="flex items-center gap-2">
+                  <input type="color" value={cfg?.simpleColor ?? "#7C3AED"} onChange={(e) => update({ simpleColor: e.target.value })} disabled={disabled} className="h-9 w-12 cursor-pointer rounded border border-white/10 bg-transparent p-0.5" />
+                  <input type="text" value={cfg?.simpleColor ?? "#7C3AED"} onChange={(e) => update({ simpleColor: e.target.value })} placeholder="#7C3AED" disabled={disabled} className="input flex-1" />
+                </div>
+              </Field>
+            </div>
+          )}
+
         </div>
       )}
     </div>
