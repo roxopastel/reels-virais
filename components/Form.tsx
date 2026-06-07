@@ -27,6 +27,13 @@ import {
   musicFileToUrl,
   type SfxSlot,
 } from "@/lib/audio";
+import {
+  photoFileNameFromUrl,
+  photoPreviewUrl,
+  photoUrl,
+  pickRandomFile,
+} from "@/lib/publicAssets";
+import { usePublicAssetFiles } from "@/hooks/usePublicAssetFiles";
 import type {
   ConversationConfig,
   Message,
@@ -53,8 +60,10 @@ export function Form({ config, onChange, disabled }: FormProps) {
   ) => {
     onChange({ ...config, [key]: value });
   };
-  const { files: musicFiles, reload: reloadMusics } = useMusicFiles();
-  const { files: photoFiles, reload: reloadPhotos } = usePhotoFiles();
+  const { files: musicFiles, reload: reloadMusics } =
+    usePublicAssetFiles("musics");
+  const { files: photoFiles, reload: reloadPhotos } =
+    usePublicAssetFiles("fotos");
 
   const handleAvatarUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -68,13 +77,13 @@ export function Form({ config, onChange, disabled }: FormProps) {
 
   const randomPhotoUrl = (avoid?: string | null): string | null => {
     if (photoFiles.length === 0) return null;
-    const avoidFile = photoFileName(avoid);
+    const avoidFile = photoFileNameFromUrl(avoid);
     const pool =
       avoidFile && photoFiles.length > 1
         ? photoFiles.filter((file) => file !== avoidFile)
         : photoFiles;
-    const file = pool[Math.floor(Math.random() * pool.length)] ?? photoFiles[0];
-    return `/fotos/${encodeURIComponent(file)}`;
+    const file = pickRandomFile(pool) || photoFiles[0];
+    return file ? photoUrl(file) : null;
   };
 
   const randomizeAvatar = () => {
@@ -1209,7 +1218,7 @@ function MessageFocusZoomPanel({
 }) {
   const enabled = !!message.focusZoomOnMessage;
   const audio: MessageAudio = message.audio ?? {};
-  const { files } = useAudioFiles();
+  const { files } = usePublicAssetFiles("audio");
 
   const updateZoomAudio = (patch: Partial<MessageAudio>) => {
     const next: MessageAudio = { ...audio, ...patch };
@@ -1323,89 +1332,6 @@ function MessageFocusZoomPanel({
 // ============================================================
 // Per-message audio controls (edited mode)
 // ============================================================
-
-/** Fetches the list of photos available in /public/fotos/. */
-function usePhotoFiles(): { files: string[]; reload: () => void } {
-  const [files, setFiles] = useState<string[]>([]);
-  const [reloadKey, setReloadKey] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/fotos")
-      .then((r) => r.json())
-      .then((data: { files?: string[] }) => {
-        if (!cancelled && Array.isArray(data.files)) setFiles(data.files);
-      })
-      .catch(() => {
-        if (!cancelled) setFiles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
-  return { files, reload: () => setReloadKey((k) => k + 1) };
-}
-
-function photoFileName(value: string | null | undefined): string | undefined {
-  if (!value?.startsWith("/fotos/")) return undefined;
-  try {
-    const file = decodeURIComponent(value.slice("/fotos/".length));
-    if (file.includes("/") || file.includes("\\") || file.includes("..")) {
-      return undefined;
-    }
-    return file;
-  } catch {
-    return undefined;
-  }
-}
-
-function photoPreviewUrl(value: string | null | undefined): string {
-  const file = photoFileName(value);
-  if (!file) return value ?? "";
-  const base = file.replace(/\.[^.]+$/, "");
-  return `/fotos/thumbs/${encodeURIComponent(base)}.webp`;
-}
-
-/** Fetches the list of audio files available in /public/audio/. */
-function useAudioFiles(): { files: string[]; reload: () => void } {
-  const [files, setFiles] = useState<string[]>([]);
-  const [reloadKey, setReloadKey] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/audio")
-      .then((r) => r.json())
-      .then((data: { files?: string[] }) => {
-        if (!cancelled && Array.isArray(data.files)) setFiles(data.files);
-      })
-      .catch(() => {
-        /* ignore - empty list */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
-  return { files, reload: () => setReloadKey((k) => k + 1) };
-}
-
-/** Fetches the list of music files available in /public/musics/. */
-function useMusicFiles(): { files: string[]; reload: () => void } {
-  const [files, setFiles] = useState<string[]>([]);
-  const [reloadKey, setReloadKey] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/musics")
-      .then((r) => r.json())
-      .then((data: { files?: string[] }) => {
-        if (!cancelled && Array.isArray(data.files)) setFiles(data.files);
-      })
-      .catch(() => {
-        /* ignore - empty list */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
-  return { files, reload: () => setReloadKey((k) => k + 1) };
-}
 
 function BackgroundMusicPicker({
   value,
@@ -1570,26 +1496,6 @@ function notifyPreviewAudio(url: string | null) {
   );
 }
 
-function useMemeFiles(): { files: string[]; reload: () => void } {
-  const [files, setFiles] = useState<string[]>([]);
-  const [reloadKey, setReloadKey] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/memes")
-      .then((r) => r.json())
-      .then((data: { files?: string[] }) => {
-        if (!cancelled && Array.isArray(data.files)) setFiles(data.files);
-      })
-      .catch(() => {
-        /* ignore - empty list */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
-  return { files, reload: () => setReloadKey((k) => k + 1) };
-}
-
 function memePreviewUrl(file: string): string {
   return `/memes/${encodeURIComponent(file)}`;
 }
@@ -1603,7 +1509,7 @@ function MemeAfterPanel({
   disabled?: boolean;
   onChange: (next: Message) => void;
 }) {
-  const { files, reload } = useMemeFiles();
+  const { files, reload } = usePublicAssetFiles("memes");
   const selected = message.memeAfter?.file ?? "";
 
   const selectMeme = (file: string) => {
@@ -1701,7 +1607,7 @@ function MemeOverlayPanel({
   disabled?: boolean;
   onChange: (next: Message) => void;
 }) {
-  const { files, reload } = useMemeFiles();
+  const { files, reload } = usePublicAssetFiles("memes");
   const cfg = message.memeOverlay;
   const selected = cfg?.file ?? "";
 
@@ -2057,7 +1963,7 @@ function MessageAudioPanel({
   onChange: (next: Message) => void;
 }) {
   const audio: MessageAudio = message.audio ?? {};
-  const { files, reload } = useAudioFiles();
+  const { files, reload } = usePublicAssetFiles("audio");
 
   const updateAudio = (patch: Partial<MessageAudio>) => {
     const next: MessageAudio = { ...audio, ...patch };

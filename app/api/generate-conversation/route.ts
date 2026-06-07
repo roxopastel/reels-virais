@@ -1,23 +1,20 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
+import type { GeneratedConversation } from "@/lib/generatedConversation";
+import {
+  PHOTO_EXTENSIONS,
+  photoFileNameFromUrl,
+  photoUrl,
+  pickRandomFile,
+  publicPhotoUrl,
+} from "@/lib/publicAssets";
+import {
+  listPublicAssetFiles,
+  loadInlineImagePart,
+} from "@/lib/serverPublicAssets";
 import type { VideoPublishMetadata } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-interface GeneratedConversation {
-  username: string;
-  profileDisplayName: string;
-  firstSent: string;
-  receivedBatch: string[];
-  responseAlternatives: string[];
-  sentReply: string;
-  finalReceived: string;
-  videoMetadata?: VideoPublishMetadata;
-  avatarImageUrl?: string;
-  storyImageUrl?: string;
-}
 
 interface GenerateConversationRequest {
   avatarImageUrl?: string;
@@ -214,80 +211,6 @@ function extractGeminiText(data: unknown): string {
       }>;
     })?.candidates?.[0]?.content?.parts ?? [];
   return parts.map((part) => part.text ?? "").join("").trim();
-}
-
-async function loadInlineImagePart(
-  imageUrl: string | undefined
-): Promise<{ inline_data: { mime_type: string; data: string } } | null> {
-  if (!imageUrl) return null;
-
-  const dataUrl = parseDataUrl(imageUrl);
-  if (dataUrl) {
-    return {
-      inline_data: {
-        mime_type: dataUrl.mimeType,
-        data: dataUrl.base64,
-      },
-    };
-  }
-
-  const publicFile = publicFotosFileFromUrl(imageUrl);
-  if (!publicFile) return null;
-
-  try {
-    const data = await fs.readFile(publicFile.path);
-    return {
-      inline_data: {
-        mime_type: publicFile.mimeType,
-        data: data.toString("base64"),
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseDataUrl(
-  value: string
-): { mimeType: string; base64: string } | null {
-  const match = value.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
-  if (!match) return null;
-  return { mimeType: match[1].toLowerCase(), base64: match[2] };
-}
-
-function publicFotosFileFromUrl(
-  imageUrl: string
-): { path: string; mimeType: string } | null {
-  if (!imageUrl.startsWith("/fotos/")) return null;
-  const file = decodeURIComponent(imageUrl.slice("/fotos/".length));
-  if (file.includes("/") || file.includes("\\") || file.includes("..")) {
-    return null;
-  }
-
-  const ext = path.extname(file).toLowerCase();
-  const mimeType = imageMimeType(ext);
-  if (!mimeType) return null;
-
-  return {
-    path: path.join("public", "fotos", file),
-    mimeType,
-  };
-}
-
-function imageMimeType(ext: string): string | null {
-  switch (ext) {
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".png":
-      return "image/png";
-    case ".webp":
-      return "image/webp";
-    case ".gif":
-      return "image/gif";
-    default:
-      return null;
-  }
 }
 
 function parseJsonText(text: string): unknown {
@@ -558,7 +481,9 @@ async function withRandomPhotos(
   selectedAvatarUrl: string | undefined,
   selectedStoryUrl: string | undefined
 ): Promise<GeneratedConversation> {
-  const files = await listPhotoFiles();
+  const files = await listPublicAssetFiles("fotos", PHOTO_EXTENSIONS).catch(
+    () => []
+  );
   const selectedAvatar = publicPhotoUrl(selectedAvatarUrl);
   const selectedStory = publicPhotoUrl(selectedStoryUrl);
   if (files.length === 0) {
@@ -569,59 +494,15 @@ async function withRandomPhotos(
     };
   }
 
-  const avatar = selectedAvatar ?? photoUrl(pickRandom(files));
+  const avatar = selectedAvatar ?? photoUrl(pickRandomFile(files));
   const story =
     selectedStory ??
-    photoUrl(pickRandom(files, fileNameFromPhotoUrl(avatar) ?? undefined));
+    photoUrl(pickRandomFile(files, photoFileNameFromUrl(avatar) ?? undefined));
   return {
     ...conversation,
     avatarImageUrl: avatar,
     storyImageUrl: story,
   };
-}
-
-async function listPhotoFiles(): Promise<string[]> {
-  const dir = path.join("public", "fotos");
-  const allowed = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .filter((name) => allowed.has(path.extname(name).toLowerCase()))
-      .sort((a, b) => a.localeCompare(b));
-  } catch {
-    return [];
-  }
-}
-
-function pickRandom(files: string[], avoid?: string): string {
-  const pool =
-    avoid && files.length > 1 ? files.filter((file) => file !== avoid) : files;
-  return pool[Math.floor(Math.random() * pool.length)] ?? files[0];
-}
-
-function photoUrl(file: string): string {
-  return `/fotos/${encodeURIComponent(file)}`;
-}
-
-function publicPhotoUrl(value: string | undefined): string | undefined {
-  if (!value?.startsWith("/fotos/")) return undefined;
-  const file = fileNameFromPhotoUrl(value);
-  return file ? photoUrl(file) : undefined;
-}
-
-function fileNameFromPhotoUrl(value: string): string | undefined {
-  if (!value.startsWith("/fotos/")) return undefined;
-  try {
-    const file = decodeURIComponent(value.slice("/fotos/".length));
-    if (file.includes("/") || file.includes("\\") || file.includes("..")) {
-      return undefined;
-    }
-    return file;
-  } catch {
-    return undefined;
-  }
 }
 
 function normalizeTextArray(
