@@ -372,9 +372,10 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     ctaImages: {
       google: ctaGoogleImageRef.current,
       busca: ctaBuscaImageRef.current,
-      areaLogada: ctaCustomScreenshotRef.current ?? ctaAreaLogadaImageRef.current,
-      fotoEnviada: ctaCustomScreenshotRef.current ?? ctaFotoEnviadaImageRef.current,
+      areaLogada: ctaAreaLogadaImageRef.current,
+      fotoEnviada: ctaFotoEnviadaImageRef.current,
     },
+    ctaCustomScreenshot: ctaCustomScreenshotRef.current,
     storyImages: storyImagesRef.current,
     memeVideos: memeVideosRef.current,
     snapshotCanvas: snapshotCanvasRef.current,
