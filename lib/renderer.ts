@@ -1392,6 +1392,8 @@ export interface DrawContext {
     areaLogada: HTMLImageElement | null;
     fotoEnviada: HTMLImageElement | null;
   };
+  /** Screenshot do site customizado (domínio diferente do puxeassunto). */
+  ctaCustomScreenshot?: HTMLImageElement | null;
   /** Per-message story-reply images, keyed by `Message.id`. */
   storyImages: Map<string, HTMLImageElement> | null;
   /** Meme videos in `/public/memes`, keyed by filename. */
@@ -4954,6 +4956,54 @@ function drawCheckIcon(
   ctx.restore();
 }
 
+/**
+ * Renderiza o screenshot de um site customizado dentro do Safari.
+ * Usado quando o domínio é diferente do puxeassunto.com.
+ */
+function drawCustomSiteScreen(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    screenshot: HTMLImageElement;
+    domain: string;
+    loadProgress: number;
+    viewportHeight: number;
+    wifiImage: HTMLImageElement | null;
+    statusBarTime: string;
+  }
+) {
+  const y0 = safariTopBarBottomY();
+  const y1 = safariBottomBarTopY();
+  const h = y1 - y0;
+
+  // Fundo preto
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Screenshot do site preenchendo a área de conteúdo
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, y0, CANVAS_W, h);
+  ctx.clip();
+  const iw = opts.screenshot.naturalWidth || opts.screenshot.width || 1;
+  const ih = opts.screenshot.naturalHeight || opts.screenshot.height || 1;
+  const scale = Math.max(CANVAS_W / iw, h / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const dx = (CANVAS_W - dw) / 2;
+  const dy = y0;
+  ctx.drawImage(opts.screenshot, dx, dy, dw, dh);
+  ctx.restore();
+
+  // Chrome do Safari por cima
+  drawSafariChrome(ctx, {
+    urlText: opts.domain,
+    caretVisible: false,
+    loadProgress: opts.loadProgress,
+    wifiImage: opts.wifiImage,
+    statusBarTime: opts.statusBarTime,
+  });
+}
+
 function drawCtaWebScene(
   ctx: CanvasRenderingContext2D,
   timeMs: number,
@@ -4966,10 +5016,70 @@ function drawCtaWebScene(
     images: DrawContext["ctaImages"];
     keyboardImage: HTMLImageElement | null;
     viewportHeight: number;
+    customScreenshot?: HTMLImageElement | null;
+    wifiImage?: HTMLImageElement | null;
+    statusBarTime?: string;
   }
 ) {
   const urlState = computeUrlBarState(timeMs, s, opts.domain);
   const siteState = computeSiteState(timeMs, s);
+
+  // ── Fluxo customizado: tem screenshot do site digitado ───────────────────
+  // Mostra Google → digita domínio → exibe screenshot real do site no Safari.
+  if (imageReady(opts.customScreenshot)) {
+    const loadP = phaseProgress(timeMs, s.safariNavStartMs, s.safariNavEndMs);
+
+    if (timeMs < s.safariNavStartMs) {
+      // Fase 1: Google + digitação do domínio
+      drawCtaGoogleSearch(ctx, {
+        query: urlState.text,
+        tapPulse: 0,
+        viewportHeight: opts.viewportHeight,
+        domain: opts.domain,
+        googleImage: opts.images?.google,
+        keyboardImage: opts.keyboardImage,
+        keyboardAlpha: urlState.keyboardAlpha,
+        keyboardProgress: urlState.keyboardProgress,
+        highlightedKey: urlState.highlightedKey,
+        introProgress: 1,
+      });
+      return;
+    }
+
+    // Fase 2: navega e exibe o site real
+    const siteAlpha = easeOutCubic(clamp((loadP - 0.5) / 0.5, 0, 1));
+    // Ainda mostrando o Google durante a transição
+    if (siteAlpha < 1) {
+      drawCtaGoogleSearch(ctx, {
+        query: opts.domain,
+        tapPulse: 0,
+        viewportHeight: opts.viewportHeight,
+        domain: opts.domain,
+        googleImage: opts.images?.google,
+        keyboardImage: opts.keyboardImage,
+        keyboardAlpha: 0,
+        keyboardProgress: 0,
+        highlightedKey: null,
+        introProgress: 1,
+      });
+    }
+    if (siteAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = siteAlpha;
+      drawCustomSiteScreen(ctx, {
+        screenshot: opts.customScreenshot!,
+        domain: opts.domain,
+        loadProgress: loadP < 1 ? loadP : 0,
+        viewportHeight: opts.viewportHeight,
+        wifiImage: opts.wifiImage ?? null,
+        statusBarTime: opts.statusBarTime ?? "9:41",
+      });
+      ctx.restore();
+    }
+    return;
+  }
+
+  // ── Fluxo original (puxeassunto) ─────────────────────────────────────────
   const uploadedImage = opts.images?.fotoEnviada ?? opts.images?.areaLogada;
   const placeUploadedSnapshot = imageReady(opts.images?.fotoEnviada);
 
@@ -5389,6 +5499,9 @@ function drawCallToActionScene(
       images: drawCtx.ctaImages,
       keyboardImage: drawCtx.keyboardImage,
       viewportHeight: viewport.h,
+      customScreenshot: drawCtx.ctaCustomScreenshot,
+      wifiImage: drawCtx.wifiImage,
+      statusBarTime: drawCtx.config.statusBarTime,
     });
 
     ctx.restore();
