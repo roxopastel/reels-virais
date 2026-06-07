@@ -3551,6 +3551,355 @@ function drawGoogleLogo(
   ctx.restore();
 }
 
+// ============================================================
+// CTA Mode: WhatsApp
+// ============================================================
+
+function drawWhatsAppCta(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    number: string;
+    message: string;
+    revealProgress: number;
+    copyPulse: number;
+    copied: boolean;
+    viewportHeight: number;
+  }
+) {
+  const y0 = safariTopBarBottomY();
+  const y1 = safariBottomBarTopY();
+  const h = y1 - y0;
+  const p = easeOutCubic(clamp(opts.revealProgress, 0, 1));
+
+  // WhatsApp background (dark mode: #0B141A)
+  ctx.fillStyle = "#0B141A";
+  ctx.fillRect(0, y0, CANVAS_W, h);
+
+  // WA gradient topo sutil
+  const waGrad = ctx.createLinearGradient(0, y0, 0, y0 + 220);
+  waGrad.addColorStop(0, "rgba(37,211,102,0.12)");
+  waGrad.addColorStop(1, "rgba(37,211,102,0)");
+  ctx.fillStyle = waGrad;
+  ctx.fillRect(0, y0, CANVAS_W, 220);
+
+  // Logo WA
+  const logoCy = y0 + 160;
+  const logoR = 68;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(CANVAS_W / 2, logoCy, logoR, 0, Math.PI * 2);
+  ctx.fillStyle = "#25D366";
+  ctx.fill();
+  // Phone icon
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 68);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("📱", CANVAS_W / 2, logoCy + 4);
+  ctx.restore();
+
+  // Title
+  ctx.save();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 56);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Continue no WhatsApp", CANVAS_W / 2, y0 + 290);
+  ctx.restore();
+
+  // Number chip
+  if (opts.number) {
+    const numText = `+${opts.number.replace(/\D/g, "")}`;
+    ctx.save();
+    ctx.font = font(500, 40);
+    const nw = ctx.measureText(numText).width + 60;
+    const nx = (CANVAS_W - nw) / 2;
+    roundedRect(ctx, nx, y0 + 346, nw, 72, 36);
+    ctx.fillStyle = "rgba(37,211,102,0.15)";
+    ctx.fill();
+    ctx.fillStyle = "#25D366";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(numText, CANVAS_W / 2, y0 + 382);
+    ctx.restore();
+  }
+
+  // Message preview card
+  const cardX = 80;
+  const cardY = y0 + 450;
+  const cardW = CANVAS_W - 160;
+  const cardH = 280;
+  ctx.save();
+  ctx.globalAlpha = p;
+  roundedRect(ctx, cardX, cardY, cardW, cardH, 36);
+  ctx.fillStyle = "#1F2C34";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(37,211,102,0.25)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(37,211,102,0.7)";
+  ctx.font = font(600, 32);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText("MENSAGEM PRÉ-PREENCHIDA", cardX + 48, cardY + 44);
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(400, 44);
+  const msgText = opts.message || "Oi! Vi seu perfil e quero saber mais.";
+  wrapTextDraw(ctx, `"${msgText}"`, cardX + 48, cardY + 100, cardW - 96, 60, "left");
+  ctx.restore();
+
+  // Green CTA button
+  const btnW = CANVAS_W - 160;
+  const btnH = 130;
+  const btnX = 80;
+  const btnY = cardY + cardH + 60;
+  const pulse = opts.copyPulse;
+  const scale = 1 - 0.05 * pulse;
+  ctx.save();
+  ctx.translate(CANVAS_W / 2, btnY + btnH / 2);
+  ctx.scale(scale, scale);
+  ctx.translate(-CANVAS_W / 2, -(btnY + btnH / 2));
+  ctx.globalAlpha = p;
+  ctx.fillStyle = "#25D366";
+  roundedRect(ctx, btnX, btnY, btnW, btnH, btnH / 2);
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 50);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(opts.copied ? "✓ Link copiado!" : "Abrir WhatsApp →", CANVAS_W / 2, btnY + btnH / 2);
+  ctx.restore();
+}
+
+// ============================================================
+// CTA Mode: Link na Bio
+// ============================================================
+
+function drawLinkNaBioCta(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    bioUrl: string;
+    buttonLabel: string;
+    revealProgress: number;
+    copyPulse: number;
+    copied: boolean;
+    avatarImage: HTMLImageElement | null;
+    username: string;
+    viewportHeight: number;
+  }
+) {
+  const y0 = safariTopBarBottomY();
+  const y1 = safariBottomBarTopY();
+  const h = y1 - y0;
+  const p = easeOutCubic(clamp(opts.revealProgress, 0, 1));
+
+  // Instagram gradient bg
+  const igGrad = ctx.createLinearGradient(0, y0, 0, y1);
+  igGrad.addColorStop(0, "#0D0D0D");
+  igGrad.addColorStop(1, "#1A0A2E");
+  ctx.fillStyle = igGrad;
+  ctx.fillRect(0, y0, CANVAS_W, h);
+
+  // Decorative blobs
+  ctx.save();
+  const blob = ctx.createRadialGradient(CANVAS_W * 0.8, y0 + 180, 10, CANVAS_W * 0.8, y0 + 180, 500);
+  blob.addColorStop(0, "rgba(131,58,180,0.3)");
+  blob.addColorStop(1, "rgba(131,58,180,0)");
+  ctx.fillStyle = blob;
+  ctx.fillRect(0, y0, CANVAS_W, h);
+  ctx.restore();
+
+  // Avatar
+  const avatarCy = y0 + 210;
+  const avatarR = 110;
+  ctx.save();
+  // Story ring IG-style
+  const ringGrad = ctx.createLinearGradient(
+    CANVAS_W / 2 - avatarR,
+    avatarCy - avatarR,
+    CANVAS_W / 2 + avatarR,
+    avatarCy + avatarR
+  );
+  ringGrad.addColorStop(0, "#F09433");
+  ringGrad.addColorStop(0.5, "#DC2743");
+  ringGrad.addColorStop(1, "#BC1888");
+  circle(ctx, CANVAS_W / 2, avatarCy, avatarR + 10);
+  ctx.strokeStyle = ringGrad;
+  ctx.lineWidth = 8;
+  ctx.stroke();
+  ctx.restore();
+  drawAvatar(ctx, CANVAS_W / 2, avatarCy, avatarR, opts.avatarImage, opts.username.charAt(0) || "?");
+
+  // Username
+  ctx.save();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 52);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`@${opts.username}`, CANVAS_W / 2, y0 + 370);
+  ctx.restore();
+
+  // "Link na bio" label
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = font(400, 36);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🔗 Link na bio", CANVAS_W / 2, y0 + 436);
+  ctx.restore();
+
+  // URL chip
+  const urlText = opts.bioUrl || "meusite.com";
+  ctx.save();
+  ctx.globalAlpha = p;
+  ctx.font = font(600, 42);
+  const urlW = Math.min(ctx.measureText(urlText).width + 80, CANVAS_W - 160);
+  const urlX = (CANVAS_W - urlW) / 2;
+  const urlY = y0 + 510;
+  roundedRect(ctx, urlX, urlY, urlW, 84, 42);
+  const urlGrad = ctx.createLinearGradient(urlX, 0, urlX + urlW, 0);
+  urlGrad.addColorStop(0, "#833AB4");
+  urlGrad.addColorStop(0.5, "#FD1D1D");
+  urlGrad.addColorStop(1, "#FCAF45");
+  ctx.fillStyle = urlGrad;
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(urlText, CANVAS_W / 2, urlY + 42);
+  ctx.restore();
+
+  // Arrow pointing to url chip
+  ctx.save();
+  ctx.globalAlpha = p * 0.7;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 52);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText("↑", CANVAS_W / 2, y0 + 610);
+  ctx.restore();
+
+  // CTA button
+  const btnW = CANVAS_W - 160;
+  const btnH = 130;
+  const btnX = 80;
+  const btnY = y0 + 690;
+  const pulse = opts.copyPulse;
+  const scale = 1 - 0.05 * pulse;
+  ctx.save();
+  ctx.translate(CANVAS_W / 2, btnY + btnH / 2);
+  ctx.scale(scale, scale);
+  ctx.translate(-CANVAS_W / 2, -(btnY + btnH / 2));
+  ctx.globalAlpha = p;
+  const btnGrad = ctx.createLinearGradient(btnX, 0, btnX + btnW, 0);
+  btnGrad.addColorStop(0, "#833AB4");
+  btnGrad.addColorStop(0.5, "#FD1D1D");
+  btnGrad.addColorStop(1, "#FCAF45");
+  ctx.fillStyle = btnGrad;
+  roundedRect(ctx, btnX, btnY, btnW, btnH, btnH / 2);
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 50);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(
+    opts.copied ? "✓ Copiado!" : (opts.buttonLabel || "Acessar link na bio →"),
+    CANVAS_W / 2,
+    btnY + btnH / 2
+  );
+  ctx.restore();
+}
+
+// ============================================================
+// CTA Mode: Simples (overlay direto sem Safari)
+// ============================================================
+
+function drawSimpleCtaOverlay(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    title: string;
+    subtitle: string;
+    buttonLabel: string;
+    color: string;
+    emoji: string;
+    revealProgress: number;
+    copyPulse: number;
+    copied: boolean;
+    viewportHeight: number;
+  }
+) {
+  const p = easeOutCubic(clamp(opts.revealProgress, 0, 1));
+  const accentColor = opts.color || "#7C3AED";
+
+  ctx.save();
+  ctx.globalAlpha = p;
+  ctx.translate(0, (1 - p) * 80);
+
+  // Full background
+  ctx.fillStyle = "#08080F";
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Background blob
+  const blob = ctx.createRadialGradient(CANVAS_W / 2, CANVAS_H * 0.4, 40, CANVAS_W / 2, CANVAS_H * 0.4, 700);
+  blob.addColorStop(0, `${accentColor}55`);
+  blob.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = blob;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Emoji / icon
+  if (opts.emoji) {
+    ctx.font = font(700, 160);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(opts.emoji, CANVAS_W / 2, CANVAS_H * 0.3);
+  }
+
+  // Title
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(800, 72);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const titleY = opts.emoji ? CANVAS_H * 0.46 : CANVAS_H * 0.38;
+  wrapTextDraw(ctx, opts.title || "Aproveite essa oferta", CANVAS_W / 2, titleY, CANVAS_W - 160, 84);
+
+  // Subtitle
+  if (opts.subtitle) {
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.font = font(400, 46);
+    const subY = titleY + 130;
+    wrapTextDraw(ctx, opts.subtitle, CANVAS_W / 2, subY, CANVAS_W - 200, 62);
+  }
+
+  // Button
+  const btnW = CANVAS_W - 160;
+  const btnH = 140;
+  const btnX = 80;
+  const btnY = CANVAS_H - 420;
+  const pulse = opts.copyPulse;
+  const scale = 1 - 0.05 * pulse;
+  ctx.save();
+  ctx.translate(CANVAS_W / 2, btnY + btnH / 2);
+  ctx.scale(scale, scale);
+  ctx.translate(-CANVAS_W / 2, -(btnY + btnH / 2));
+  ctx.fillStyle = accentColor;
+  roundedRect(ctx, btnX, btnY, btnW, btnH, btnH / 2);
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = font(700, 54);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(
+    opts.copied ? "✓ Pronto!" : (opts.buttonLabel || "Quero saber mais →"),
+    CANVAS_W / 2,
+    btnY + btnH / 2
+  );
+  ctx.restore();
+
+  ctx.restore();
+}
+
 // ---------- puxeassunto.com fake site ----------
 
 const SITE_BG_TOP = "#0B0B12";
@@ -4847,6 +5196,7 @@ function drawCallToActionScene(
 ) {
   const { schedule: s, cfg, message, nextMessage } = cta;
   const snapshot = renderSnapshot(s.triggerMs, drawCtx);
+  const ctaMode = cfg.ctaMode ?? "site";
   const domain = (cfg.domain || "puxeassunto.com").trim();
   const suggested =
     (cfg.suggestedResponse && cfg.suggestedResponse.trim()) ||
@@ -4857,6 +5207,93 @@ function drawCallToActionScene(
     suggested
   );
   const viewport = ctaViewport(drawCtx.config);
+
+  // ── Modos simples e linknabio: renderizam como overlay sobre o Direct ──────
+  // Não passam pelo fluxo Safari/thumbnail — apenas um fade in direto.
+  if (ctaMode === "simples" || ctaMode === "linknabio" || ctaMode === "whatsapp") {
+    const revealP = clamp(
+      (timeMs - s.flashEndMs) / Math.max(1, s.safariOpenEndMs - s.flashEndMs),
+      0,
+      1
+    );
+    const copyP = phaseProgress(timeMs, s.copyTapStartMs, s.copyTapEndMs);
+    const copyPulse = copyP > 0 && copyP < 1
+      ? (copyP < 0.3 ? copyP / 0.3 : 1 - (copyP - 0.3) / 0.7)
+      : 0;
+    const copied = timeMs >= s.copyTapStartMs + (s.copyTapEndMs - s.copyTapStartMs) * 0.3;
+
+    // Flash overlay
+    const flashAlphaSimple = (() => {
+      if (timeMs < s.flashStartMs || timeMs >= s.flashEndMs) return 0;
+      const half = (s.flashEndMs - s.flashStartMs) / 2;
+      const center = s.flashStartMs + half;
+      return clamp(1 - Math.abs(timeMs - center) / half, 0, 1);
+    })();
+
+    if (timeMs < s.flashStartMs && snapshot) {
+      ctx.drawImage(snapshot, 0, 0, CANVAS_W, CANVAS_H);
+      return;
+    }
+
+    if (ctaMode === "simples") {
+      drawSimpleCtaOverlay(ctx, {
+        title: cfg.simpleTitle || "Aproveite essa oferta",
+        subtitle: cfg.simpleSubtitle || "",
+        buttonLabel: cfg.simpleButtonLabel || "Quero saber mais →",
+        color: cfg.simpleColor || "#7C3AED",
+        emoji: cfg.simpleEmoji || "🔥",
+        revealProgress: revealP,
+        copyPulse,
+        copied,
+        viewportHeight: viewport.h,
+      });
+    } else if (ctaMode === "whatsapp") {
+      // fundo escuro + Safe chromr do Safari para realism
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      drawSafariChrome(ctx, {
+        urlText: "wa.me",
+        caretVisible: false,
+        wifiImage: drawCtx.wifiImage,
+        statusBarTime: drawCtx.config.statusBarTime,
+      });
+      drawWhatsAppCta(ctx, {
+        number: cfg.whatsappNumber || "",
+        message: cfg.whatsappMessage || suggested,
+        revealProgress: revealP,
+        copyPulse,
+        copied,
+        viewportHeight: viewport.h,
+      });
+    } else {
+      // linknabio
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      drawSafariChrome(ctx, {
+        urlText: "instagram.com",
+        caretVisible: false,
+        wifiImage: drawCtx.wifiImage,
+        statusBarTime: drawCtx.config.statusBarTime,
+      });
+      drawLinkNaBioCta(ctx, {
+        bioUrl: cfg.bioUrl || "",
+        buttonLabel: cfg.bioButtonLabel || "Acessar link na bio →",
+        revealProgress: revealP,
+        copyPulse,
+        copied,
+        avatarImage: drawCtx.avatarImage,
+        username: drawCtx.config.username,
+        viewportHeight: viewport.h,
+      });
+    }
+
+    if (flashAlphaSimple > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${flashAlphaSimple})`;
+      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    }
+    return;
+  }
+  // ── Modo "site" (fluxo original) ─────────────────────────────────────────
 
   // ===== Determine phase progresses =====
   const flashAlpha = (() => {

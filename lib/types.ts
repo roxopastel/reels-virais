@@ -101,6 +101,15 @@ export interface Message {
    *  The text shown as the "suggested response" inside the fake site
    *  defaults to the next message's text. */
   callToActionAfter?: {
+    /**
+     * Tipo de CTA a exibir após esta mensagem.
+     *
+     * - "site"      (padrão) — abre o Safari, digita o domínio, mostra o site com resposta sugerida.
+     * - "whatsapp"  — abre o WhatsApp com uma conversa pré-preenchida.
+     * - "linknabio" — abre o perfil do Instagram e destaca o link na bio.
+     * - "simples"   — overlay direto (sem Safari) com título e botão personalizáveis.
+     */
+    ctaMode?: "site" | "whatsapp" | "linknabio" | "simples";
     /** Domain typed inside Safari's URL bar. Default: "puxeassunto.com". */
     domain?: string;
     /** Text shown as the "suggested response" on the fake site. When
@@ -111,6 +120,27 @@ export interface Message {
     responseAlternatives?: string[];
     /** Tagline / subtitle shown under the brand on the fake site. */
     siteTagline?: string;
+    // ── Modo "whatsapp" ──────────────────────────────────────────────────────
+    /** Número do WhatsApp com DDI (ex: "5511999998888"). */
+    whatsappNumber?: string;
+    /** Mensagem pré-preenchida no WhatsApp. */
+    whatsappMessage?: string;
+    // ── Modo "linknabio" ─────────────────────────────────────────────────────
+    /** URL exibida como link na bio (ex: "meusite.com/oferta"). */
+    bioUrl?: string;
+    /** Texto do botão de destaque no modo linknabio. */
+    bioButtonLabel?: string;
+    // ── Modo "simples" ───────────────────────────────────────────────────────
+    /** Título grande do overlay simples. */
+    simpleTitle?: string;
+    /** Subtítulo / descrição do overlay simples. */
+    simpleSubtitle?: string;
+    /** Label do botão de ação no overlay simples. */
+    simpleButtonLabel?: string;
+    /** Cor de fundo do overlay simples (hex). Ex: "#7C3AED". */
+    simpleColor?: string;
+    /** Emoji ou ícone decorativo no centro do overlay (ex: "🔥"). */
+    simpleEmoji?: string;
   };
   /** Optional per-message overrides for the "edited video" mode SFX. */
   audio?: MessageAudio;
