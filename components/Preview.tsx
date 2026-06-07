@@ -186,6 +186,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   const ctaBuscaImageRef = useRef<HTMLImageElement | null>(null);
   const ctaAreaLogadaImageRef = useRef<HTMLImageElement | null>(null);
   const ctaFotoEnviadaImageRef = useRef<HTMLImageElement | null>(null);
+  const ctaCustomScreenshotRef = useRef<HTMLImageElement | null>(null);
+  const ctaCustomScreenshotDomainRef = useRef<string>("");
   const storyImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const memeVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
   const snapshotCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -219,6 +221,27 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
   const [isReady, setIsReady] = useState(false);
 
   const ensureCurrentAssets = async (cfg: ConversationConfig) => {
+    // ── Screenshot customizado do domínio CTA ──────────────────────────────
+    // Busca screenshot via /api/screenshot quando o domínio for diferente
+    // de puxeassunto.com (que já tem imagens estáticas em /public).
+    const ctaDomain = cfg.messages
+      .map((m) => m.callToActionAfter?.domain?.trim())
+      .find((d) => d && !/puxeassunto/i.test(d));
+
+    const screenshotTask = (async () => {
+      if (!ctaDomain) return;
+      if (ctaCustomScreenshotDomainRef.current === ctaDomain && ctaCustomScreenshotRef.current) return;
+      try {
+        const img = await loadImageOrNull(`/api/screenshot?url=${encodeURIComponent(ctaDomain)}`);
+        if (img) {
+          ctaCustomScreenshotRef.current = img;
+          ctaCustomScreenshotDomainRef.current = ctaDomain;
+        }
+      } catch {
+        // silencia erro — cena vai usar o fallback desenhado no Canvas
+      }
+    })();
+
     const iconTasks = [
       !headerIconsRef.current &&
         loadImageOrNull("/icons-superior-direito-ligar.jpeg").then((img) => {
@@ -264,6 +287,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
         loadImageOrNull("/foto-enviada.jpeg").then((img) => {
           if (img) ctaFotoEnviadaImageRef.current = img;
         }),
+      screenshotTask,
     ].filter((task): task is Promise<void> => !!task);
 
     const avatarTask = cfg.avatarDataUrl
@@ -346,8 +370,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(function Preview(
     ctaImages: {
       google: ctaGoogleImageRef.current,
       busca: ctaBuscaImageRef.current,
-      areaLogada: ctaAreaLogadaImageRef.current,
-      fotoEnviada: ctaFotoEnviadaImageRef.current,
+      areaLogada: ctaCustomScreenshotRef.current ?? ctaAreaLogadaImageRef.current,
+      fotoEnviada: ctaCustomScreenshotRef.current ?? ctaFotoEnviadaImageRef.current,
     },
     storyImages: storyImagesRef.current,
     memeVideos: memeVideosRef.current,
